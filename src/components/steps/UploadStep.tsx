@@ -10,7 +10,7 @@ const storage = new IndexedDBStorage();
 export function UploadStep() {
   const { files, addFiles, removeFile, clearFiles, parseErrors, wsdlDefinitions } =
     useProjectStore();
-  const [proxyUrl, setProxyUrl] = useState('https://proxy.kumatech.net');
+  const [proxyUrl, setProxyUrl] = useState('');
 
   useEffect(() => {
     storage.get<string>('proxyUrl').then((val) => {
@@ -53,7 +53,7 @@ export function UploadStep() {
             value={proxyUrl}
             onChange={e => setProxyUrl(e.target.value)}
             style={{ width: '100%', padding: '8px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '4px' }}
-            placeholder="https://proxy.kumatech.net"
+            placeholder="https://your-cors-proxy.example.com"
           />
           <details style={{ marginTop: '8px' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--primary-hover)', fontSize: '0.85rem' }}>

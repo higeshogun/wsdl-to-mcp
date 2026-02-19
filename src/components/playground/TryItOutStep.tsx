@@ -270,7 +270,7 @@ export function TryItOutStep() {
                 value={proxyUrl}
                 onChange={e => setProxyUrl(e.target.value)}
                 style={{ width: '100%', padding: '8px' }}
-                placeholder="https://proxy.kumatech.net"
+                placeholder="https://your-cors-proxy.example.com"
               />
             </div>
           )}
