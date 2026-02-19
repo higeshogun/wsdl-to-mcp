@@ -3,7 +3,7 @@ import type {
   NormalizedMessage, SendMessageResult, ContentBlock,
 } from './types';
 
-const DEFAULT_BASE_URL = 'http://localhost:8080';
+const DEFAULT_BASE_URL = 'https://myllm.kumatech.net';
 
 export const llamacppProvider: LLMProvider = {
   type: 'llamacpp',

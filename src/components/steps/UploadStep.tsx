@@ -10,7 +10,7 @@ const storage = new IndexedDBStorage();
 export function UploadStep() {
   const { files, addFiles, removeFile, clearFiles, parseErrors, wsdlDefinitions } =
     useProjectStore();
-  const [proxyUrl, setProxyUrl] = useState('');
+  const [proxyUrl, setProxyUrl] = useState('https://proxy.kumatech.net');
 
   useEffect(() => {
     storage.get<string>('proxyUrl').then((val) => {
