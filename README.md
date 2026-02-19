@@ -1,73 +1,79 @@
-# React + TypeScript + Vite
+# WSDL to MCP
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A browser-based tool that converts SOAP/WSDL service definitions into fully-typed [Model Context Protocol (MCP)](https://modelcontextprotocol.io) projects — ready to drop into any MCP-compatible AI agent.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Point it at a WSDL file (local or URL) and it generates a complete, runnable MCP server project:
 
-## React Compiler
+- Parses WSDL and XSD schemas, resolving imports and complex type hierarchies
+- Maps SOAP operations to MCP tools with typed input/output schemas (Zod + JSON Schema)
+- Generates a TypeScript MCP project with session management, XML↔JSON conversion, and error handling
+- Includes an in-browser playground to test the generated tools against a live LLM
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Getting started
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Then open `http://localhost:5173` in your browser.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## How to use
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. **Upload** — Drop a `.wsdl` file or load one from a URL (with optional CORS proxy)
+2. **Configure** — Set the project name, target namespace, and which operations to include
+3. **Review** — Preview all generated files before downloading
+4. **Download** — Get a ZIP of the complete MCP project
+5. **Try it out** — Test your tools interactively in the browser playground
+
+## Generated project
+
+The downloaded ZIP contains a ready-to-run MCP server with:
+
+| File | Purpose |
+|------|---------|
+| `src/index.ts` | MCP server entry point |
+| `src/tools/` | One file per SOAP operation, with Zod schemas |
+| `src/lib/client-factory.ts` | SOAP HTTP client |
+| `src/lib/xml-to-json.ts` | XML↔JSON conversion |
+| `src/lib/session-manager.ts` | WS-Security session handling |
+| `src/lib/header-builder.ts` | SOAP header construction |
+| `.env.example` | Environment variable reference |
+
+## Playground LLM providers
+
+The in-browser playground supports:
+
+| Provider | Auth | Notes |
+|----------|------|-------|
+| **Ollama** | None | Local; default `http://localhost:11434`. Run with `OLLAMA_ORIGINS=* ollama serve` |
+| **llama.cpp** | None | Local; default `http://localhost:8080`. Needs CORS enabled |
+| **Anthropic** | API key | Requires a CORS proxy (browser → API) |
+| **Google Gemini** | API key | Requires a CORS proxy (browser → API) |
+
+### CORS proxy
+
+For cloud providers (Anthropic, Gemini), the browser can't call their APIs directly due to CORS. The app includes a Cloudflare Worker script you can deploy as your own proxy — see the **CORS Proxy** section in the Upload step UI.
+
+## Building
+
+```bash
+npm run build
 ```
+
+Output goes to `dist/`.
+
+## Tech stack
+
+- **React 19** + **TypeScript**
+- **Vite** — build tooling
+- **Zustand** — state management
+- **jszip** + **file-saver** — ZIP generation and download
+- **highlight.js** — code preview syntax highlighting
+- No backend — entirely client-side
+
+## License
+
+MIT
