@@ -3,16 +3,19 @@ import { anthropicProvider } from './anthropic';
 import { ollamaProvider } from './ollama';
 import { geminiProvider } from './gemini';
 import { llamacppProvider } from './llamacpp';
+import { openaiProvider } from './openai';
 
 export const providers: Record<ProviderType, LLMProvider> = {
   anthropic: anthropicProvider,
   ollama: ollamaProvider,
   gemini: geminiProvider,
   llamacpp: llamacppProvider,
+  openai: openaiProvider,
 };
 
 export const providerList: LLMProvider[] = [
   llamacppProvider,
+  openaiProvider,
   anthropicProvider,
   ollamaProvider,
   geminiProvider,

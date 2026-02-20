@@ -13,6 +13,16 @@ export const llamacppProvider: LLMProvider = {
   requiresBaseUrl: true,
   defaultBaseUrl: DEFAULT_BASE_URL,
 
+  getSystemPrompt(tools: ToolDefinition[]): string | null {
+    if (tools.length === 0) return null;
+    const toolNames = tools.map(t => t.name).join(', ');
+    return `You are a helpful assistant with access to external tools/functions. ` +
+      `When the user asks a question that can be answered using the available tools, ` +
+      `you MUST call the appropriate tool(s) instead of answering from your own knowledge. ` +
+      `Always prefer using tools over answering from memory. ` +
+      `Available tools: ${toolNames}`;
+  },
+
   async fetchModels(config: ProviderConfig): Promise<ModelOption[]> {
     const base = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
 
