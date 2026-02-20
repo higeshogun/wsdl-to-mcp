@@ -18,6 +18,7 @@ interface ToolInfo {
   inputMessage: WsdlMessage | undefined;
   endpoint: string;
   targetNamespace: string;
+  soapAction: string;
 }
 
 export class BrowserMcpServer {
@@ -119,7 +120,8 @@ export class BrowserMcpServer {
               serviceName: portType.name,
               inputMessage,
               endpoint: 'http://localhost:8080/soap', // Default endpoint
-              targetNamespace: def.targetNamespace
+              targetNamespace: def.targetNamespace,
+              soapAction: ''
             });
           }
         }
@@ -200,12 +202,14 @@ export class BrowserMcpServer {
 
                 tools.push({ name: toolName, description: desc, inputSchema });
                 console.log(`[BrowserMcpServer]         ✓ Tool created: ${toolName}`);
-                this.tools.set(toolName, { 
-                    op, 
-                    serviceName: service.name, 
-                    inputMessage, 
+                const bindingOp = binding.operations.find(bo => bo.name === op.name);
+                this.tools.set(toolName, {
+                    op,
+                    serviceName: service.name,
+                    inputMessage,
                     endpoint: port.soapAddress,
-                    targetNamespace: def.targetNamespace
+                    targetNamespace: def.targetNamespace,
+                    soapAction: bindingOp?.soapAction ?? ''
                 });
              }
         }
@@ -219,7 +223,7 @@ export class BrowserMcpServer {
     const toolInfo = this.tools.get(name);
     if (!toolInfo) throw new Error(`Tool ${name} not found`);
 
-    const { op, inputMessage, endpoint, targetNamespace } = toolInfo;
+    const { op, inputMessage, endpoint, targetNamespace, soapAction } = toolInfo;
     
     let rootName = op.name;
     let namespace = targetNamespace;
@@ -253,7 +257,7 @@ export class BrowserMcpServer {
             method: 'POST',
             headers: {
                 'Content-Type': 'text/xml; charset=utf-8',
-                'SOAPAction': '', // Simple SOAP 1.1 action
+                'SOAPAction': soapAction,
             },
             body: envelope
         });
