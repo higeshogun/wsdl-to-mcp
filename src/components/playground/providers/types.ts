@@ -38,7 +38,7 @@ export interface SendMessageResult {
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | string;
 }
 
-export type ProviderType = 'anthropic' | 'ollama' | 'gemini' | 'llamacpp';
+export type ProviderType = 'anthropic' | 'ollama' | 'gemini' | 'llamacpp' | 'openai';
 
 export interface ProviderConfig {
   apiKey: string;
@@ -54,6 +54,8 @@ export interface LLMProvider {
   readonly requiresProxy: boolean;
   readonly requiresBaseUrl: boolean;
   readonly defaultBaseUrl: string;
+
+  getSystemPrompt?(tools: ToolDefinition[]): string | null;
 
   fetchModels(config: ProviderConfig): Promise<ModelOption[]>;
 

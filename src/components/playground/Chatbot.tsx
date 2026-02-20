@@ -119,6 +119,14 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
     setInput('');
   };
 
+  const tools: ToolDefinition[] = server.getTools().map(t => ({
+    name: t.name,
+    description: t.description || 'No description',
+    inputSchema: { type: 'object' as const, properties: t.inputSchema.properties || {}, required: t.inputSchema.required || [] },
+  }));
+  const p = getProvider(provider);
+  const systemPrompt = p.getSystemPrompt ? p.getSystemPrompt(tools) : null;
+
   return (
     <div className="chatbot">
       <div className="chatbot-header">
@@ -132,6 +140,12 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
           ↺ New Chat
         </button>
       </div>
+      <details className="system-prompt-panel">
+        <summary>System Prompt</summary>
+        <pre className="system-prompt-content">
+          {systemPrompt ?? 'No explicit system prompt — this provider uses native tool-calling support.'}
+        </pre>
+      </details>
       <div className="messages">
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>

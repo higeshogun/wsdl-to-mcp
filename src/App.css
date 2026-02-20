@@ -739,6 +739,34 @@ body {
   color: var(--text-muted);
 }
 
+.system-prompt-panel {
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.system-prompt-panel > summary {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.system-prompt-panel > summary:hover {
+  color: var(--text);
+}
+
+.system-prompt-content {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+  background: var(--bg);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+}
+
 .btn-clear-chat {
   display: flex;
   align-items: center;
