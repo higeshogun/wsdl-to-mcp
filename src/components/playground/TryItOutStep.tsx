@@ -12,10 +12,10 @@ const storage = new IndexedDBStorage();
 
 export function TryItOutStep() {
   const { wsdlDefinitions, xsdSchemas } = useProjectStore();
-  const [provider, setProvider] = useState<ProviderType>('llamacpp');
+  const [provider, setProvider] = useState<ProviderType>((import.meta.env.VITE_DEFAULT_PROVIDER as ProviderType) || 'ollama');
   const [apiKey, setApiKey] = useState('');
-  const [proxyUrl, setProxyUrl] = useState('https://proxy.kumatech.net');
-  const [baseUrl, setBaseUrl] = useState('https://myllm.kumatech.net');
+  const [proxyUrl, setProxyUrl] = useState(import.meta.env.VITE_DEFAULT_PROXY_URL || '');
+  const [baseUrl, setBaseUrl] = useState(import.meta.env.VITE_DEFAULT_LLM_BASE_URL || 'http://localhost:11434');
   const [model, setModel] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [models, setModels] = useState<ModelOption[]>([]);
