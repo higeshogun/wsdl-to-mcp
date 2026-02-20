@@ -47,7 +47,8 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
     }
   };
 
-  const processTurn = async (currentMessages: NormalizedMessage[]) => {
+  const processTurn = async (currentMessages: NormalizedMessage[], depth = 0) => {
+    if (depth >= 10) throw new Error('Max tool call rounds reached (10). The tool may be unavailable or returning errors.');
     // 1. Get available tools from MCP server
     const tools: ToolDefinition[] = server.getTools().map(t => ({
       name: t.name,
@@ -108,7 +109,7 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
       );
 
       const toolMsg: NormalizedMessage = { role: 'user', content: toolResults };
-      await processTurn([...updatedMessages, toolMsg]);
+      await processTurn([...updatedMessages, toolMsg], depth + 1);
     }
   };
 
