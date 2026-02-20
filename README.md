@@ -57,6 +57,19 @@ The in-browser playground supports:
 
 For cloud providers (Anthropic, Gemini), the browser can't call their APIs directly due to CORS. The app includes a Cloudflare Worker script you can deploy as your own proxy — see the **CORS Proxy** section in the Upload step UI.
 
+## Local development configuration
+
+Create a `.env.local` file in the project root to override defaults without touching source code (gitignored via `*.local`):
+
+```
+VITE_DEFAULT_PROVIDER=llamacpp        # Default LLM provider (ollama | llamacpp | anthropic | gemini)
+VITE_DEFAULT_PROXY_URL=https://...    # Pre-fill the CORS proxy URL field
+VITE_DEFAULT_LLM_BASE_URL=https://... # Pre-fill the LLM server URL field
+VITE_ALLOWED_HOST=your-domain.example.com  # Add a custom hostname to Vite's allowedHosts
+```
+
+Without a `.env.local`, the app falls back to safe public defaults (Ollama on `localhost`).
+
 ## Building
 
 ```bash

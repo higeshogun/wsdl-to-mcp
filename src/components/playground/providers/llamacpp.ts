@@ -3,7 +3,7 @@ import type {
   NormalizedMessage, SendMessageResult, ContentBlock,
 } from './types';
 
-const DEFAULT_BASE_URL = 'http://localhost:8080';
+const DEFAULT_BASE_URL = import.meta.env.VITE_DEFAULT_LLM_BASE_URL || 'http://localhost:8080';
 
 export const llamacppProvider: LLMProvider = {
   type: 'llamacpp',
