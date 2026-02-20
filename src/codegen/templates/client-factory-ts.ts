@@ -17,7 +17,7 @@ const WSDL_DIR = path.join(__dirname, '..', '..', 'wsdl');
 export async function ${funcName}(baseUrl: string): Promise<soap.Client> {
   const wsdlPath = path.join(WSDL_DIR, '${svc.wsdlFile}');
   const client = await soap.createClientAsync(wsdlPath);
-  client.setEndpoint(\`\${baseUrl}/${svc.serviceName}\`);
+  client.setEndpoint(\`\${baseUrl}\`);
   return client;
 }`;
   }).join('\n');
