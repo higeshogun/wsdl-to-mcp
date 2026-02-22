@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useProjectStore } from '../../store/project-store';
 import { BrowserMcpServer } from './BrowserMcpServer';
 import type { Tool } from './BrowserMcpServer';
@@ -31,6 +31,10 @@ export function TryItOutStep() {
   const [soapEndpoint, setSoapEndpoint] = useState('');
   const [sessionHeaderNs, setSessionHeaderNs] = useState('');
   const [sessionStatus, setSessionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [schemaOverrides, setSchemaOverrides] = useState<Record<string, any>>({});
+  const [editingSchema, setEditingSchema] = useState<string | null>(null);
+  const [editBuffer, setEditBuffer] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Load config on mount
   useEffect(() => {
@@ -46,6 +50,7 @@ export function TryItOutStep() {
     storage.get<string>('sessionLoginEndpoint').then((val) => val && setSessionLoginEndpoint(val));
     storage.get<string>('soapEndpoint').then((val) => val && setSoapEndpoint(val));
     storage.get<string>('sessionHeaderNs').then((val) => val && setSessionHeaderNs(val));
+    storage.get<Record<string, any>>('schemaOverrides').then((val) => val && setSchemaOverrides(val));
   }, []);
 
   // Save config on change
@@ -61,6 +66,7 @@ export function TryItOutStep() {
   useEffect(() => { storage.set('sessionLoginEndpoint', sessionLoginEndpoint); }, [sessionLoginEndpoint]);
   useEffect(() => { storage.set('soapEndpoint', soapEndpoint); }, [soapEndpoint]);
   useEffect(() => { storage.set('sessionHeaderNs', sessionHeaderNs); }, [sessionHeaderNs]);
+  useEffect(() => { storage.set('schemaOverrides', schemaOverrides); }, [schemaOverrides]);
 
   // Init server
   useEffect(() => {
@@ -110,6 +116,45 @@ export function TryItOutStep() {
     if (!server) return { tools: [] as Tool[], warnings: [] as string[] };
     return server.getTools();
   }, [server]);
+
+  // Apply schema overrides to tools for display and LLM usage
+  const effectiveTools = useMemo(() => {
+    return tools.map(t => {
+      const override = schemaOverrides[t.name];
+      if (!override) return t;
+      return { ...t, inputSchema: override };
+    });
+  }, [tools, schemaOverrides]);
+
+  const startEditing = useCallback((toolName: string) => {
+    const override = schemaOverrides[toolName];
+    const tool = tools.find(t => t.name === toolName);
+    const schema = override || tool?.inputSchema || {};
+    setEditingSchema(toolName);
+    setEditBuffer(JSON.stringify(schema, null, 2));
+    setEditError(null);
+  }, [schemaOverrides, tools]);
+
+  const saveSchema = useCallback(() => {
+    if (!editingSchema) return;
+    try {
+      const parsed = JSON.parse(editBuffer);
+      setSchemaOverrides(prev => ({ ...prev, [editingSchema]: parsed }));
+      setEditingSchema(null);
+      setEditError(null);
+    } catch (e: any) {
+      setEditError(e.message);
+    }
+  }, [editingSchema, editBuffer]);
+
+  const resetSchema = useCallback((toolName: string) => {
+    setSchemaOverrides(prev => {
+      const next = { ...prev };
+      delete next[toolName];
+      return next;
+    });
+    if (editingSchema === toolName) setEditingSchema(null);
+  }, [editingSchema]);
 
   // Tool names to hide from the LLM when session auth is configured (login/logout are auto-managed)
   const hiddenToolNames = useMemo(() => {
@@ -178,54 +223,101 @@ export function TryItOutStep() {
         <details open={toolsPanelOpen} onToggle={e => setToolsPanelOpen((e.target as HTMLDetailsElement).open)}>
           <summary style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '15px' }}>
             Discovered Tools
-            {tools.length > 0 && (
-              <span className="tools-count-badge">{tools.length}</span>
+            {effectiveTools.length > 0 && (
+              <span className="tools-count-badge">{effectiveTools.length}</span>
+            )}
+            {Object.keys(schemaOverrides).length > 0 && (
+              <span className="tools-count-badge" style={{ background: 'var(--warning)', color: '#000', marginLeft: '4px' }}>
+                {Object.keys(schemaOverrides).length} overridden
+              </span>
             )}
           </summary>
 
-          {tools.length === 0 ? (
+          {effectiveTools.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
               No tools discovered. Go to the Upload step to add WSDL files.
             </p>
           ) : (
             <div className="tools-list">
-              {tools.map((tool, i) => (
-                <div key={i} className="tool-item">
+              {effectiveTools.map((tool, i) => (
+                <div key={i} className={`tool-item${schemaOverrides[tool.name] ? ' tool-item--overridden' : ''}`}>
                   <div className="tool-item-header">
                     <code className="tool-item-name">{tool.name}</code>
-                    {tool.inputSchema?.properties && (
-                      <span className="tool-item-params">
-                        {Object.keys(tool.inputSchema.properties).length} params
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      {schemaOverrides[tool.name] && (
+                        <button
+                          className="schema-action-btn schema-action-btn--reset"
+                          onClick={() => resetSchema(tool.name)}
+                          title="Reset to original WSDL schema"
+                        >
+                          Reset
+                        </button>
+                      )}
+                      <button
+                        className="schema-action-btn"
+                        onClick={() => editingSchema === tool.name ? setEditingSchema(null) : startEditing(tool.name)}
+                        title="Edit input schema JSON"
+                      >
+                        {editingSchema === tool.name ? 'Cancel' : 'Edit Schema'}
+                      </button>
+                      {tool.inputSchema?.properties && (
+                        <span className="tool-item-params">
+                          {Object.keys(tool.inputSchema.properties).length} params
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {tool.description && (
                     <p className="tool-item-desc">{tool.description}</p>
                   )}
-                  {tool.inputSchema?.properties && Object.keys(tool.inputSchema.properties).length > 0 && (
-                    <div className="tool-item-schema">
-                      {Object.entries(tool.inputSchema.properties).map(([key, val]: [string, any]) => (
-                        <span key={key} className="tool-param-tag">
-                          {key}
-                          {val.type && <span className="tool-param-type">: {val.type}</span>}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {tool.outputSchema?.properties && Object.keys(tool.outputSchema.properties).length > 0 && (
-                    <details className="tool-response-details">
-                      <summary>
-                        Response fields ({Object.keys(tool.outputSchema.properties).length})
-                      </summary>
-                      <div className="tool-item-schema">
-                        {Object.entries(tool.outputSchema.properties).map(([key, val]: [string, any]) => (
-                          <span key={key} className="tool-param-tag">
-                            {key}
-                            {val.type && <span className="tool-param-type">: {val.type}</span>}
-                          </span>
-                        ))}
+                  {editingSchema === tool.name ? (
+                    <div className="schema-editor">
+                      <textarea
+                        className="schema-editor-textarea"
+                        value={editBuffer}
+                        onChange={e => { setEditBuffer(e.target.value); setEditError(null); }}
+                        spellCheck={false}
+                      />
+                      {editError && (
+                        <p style={{ color: 'var(--error)', fontSize: '0.8rem', margin: '4px 0 0' }}>Invalid JSON: {editError}</p>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                        <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={saveSchema}>
+                          Save Override
+                        </button>
+                        <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => setEditingSchema(null)}>
+                          Cancel
+                        </button>
                       </div>
-                    </details>
+                    </div>
+                  ) : (
+                    <>
+                      {tool.inputSchema?.properties && Object.keys(tool.inputSchema.properties).length > 0 && (
+                        <div className="tool-item-schema">
+                          {Object.entries(tool.inputSchema.properties).map(([key, val]: [string, any]) => (
+                            <span key={key} className="tool-param-tag">
+                              {key}
+                              {val.type && <span className="tool-param-type">: {val.type}</span>}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {tool.outputSchema?.properties && Object.keys(tool.outputSchema.properties).length > 0 && (
+                        <details className="tool-response-details">
+                          <summary>
+                            Response fields ({Object.keys(tool.outputSchema.properties).length})
+                          </summary>
+                          <div className="tool-item-schema">
+                            {Object.entries(tool.outputSchema.properties).map(([key, val]: [string, any]) => (
+                              <span key={key} className="tool-param-tag">
+                                {key}
+                                {val.type && <span className="tool-param-type">: {val.type}</span>}
+                              </span>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -504,6 +596,7 @@ export function TryItOutStep() {
           model={model === 'custom' ? customModel : model}
           server={server!}
           hiddenToolNames={hiddenToolNames}
+          schemaOverrides={schemaOverrides}
         />
       ) : (
         <div className="placeholder-message">

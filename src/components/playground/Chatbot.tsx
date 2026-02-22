@@ -14,6 +14,8 @@ interface ChatbotProps {
   server: BrowserMcpServer;
   /** Tool names to hide from the LLM (handled automatically, e.g. Login/Logout) */
   hiddenToolNames?: Set<string>;
+  /** Per-tool input schema overrides (tool name -> schema) */
+  schemaOverrides?: Record<string, any>;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -33,7 +35,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hiddenToolNames }: ChatbotProps) {
+export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hiddenToolNames, schemaOverrides }: ChatbotProps) {
   const [messages, setMessages] = useState<NormalizedMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,15 +82,18 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
     // 1. Get available tools from MCP server (excluding session-managed ones)
     const tools: ToolDefinition[] = server.getTools().tools
       .filter(t => !hiddenToolNames?.has(t.name))
-      .map(t => ({
-        name: t.name,
-        description: t.description || 'No description',
-        inputSchema: {
-          type: 'object' as const,
-          properties: t.inputSchema.properties || {},
-          required: t.inputSchema.required || [],
-        },
-      }));
+      .map(t => {
+        const schema = schemaOverrides?.[t.name] || t.inputSchema;
+        return {
+          name: t.name,
+          description: t.description || 'No description',
+          inputSchema: {
+            type: 'object' as const,
+            properties: schema.properties || {},
+            required: schema.required || [],
+          },
+        };
+      });
 
     console.log(`[Chatbot] Sending ${tools.length} tools to ${provider}:`, tools.map(t => t.name));
 
@@ -173,11 +178,14 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
 
   const tools: ToolDefinition[] = server.getTools().tools
     .filter(t => !hiddenToolNames?.has(t.name))
-    .map(t => ({
-      name: t.name,
-      description: t.description || 'No description',
-      inputSchema: { type: 'object' as const, properties: t.inputSchema.properties || {}, required: t.inputSchema.required || [] },
-    }));
+    .map(t => {
+      const schema = schemaOverrides?.[t.name] || t.inputSchema;
+      return {
+        name: t.name,
+        description: t.description || 'No description',
+        inputSchema: { type: 'object' as const, properties: schema.properties || {}, required: schema.required || [] },
+      };
+    });
   const p = getProvider(provider);
   const systemPrompt = p.getSystemPrompt ? p.getSystemPrompt(tools) : null;
 
