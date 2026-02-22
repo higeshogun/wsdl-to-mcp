@@ -1164,6 +1164,55 @@ body {
   margin-bottom: 4px;
 }
 
+/* Schema Override Styles */
+.tool-item--overridden {
+  border-color: var(--warning);
+  border-style: dashed;
+}
+.schema-action-btn {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.schema-action-btn:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+.schema-action-btn--reset {
+  color: var(--warning);
+}
+.schema-action-btn--reset:hover {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.schema-editor {
+  margin-top: 8px;
+}
+.schema-editor-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.schema-editor-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 /* SOAP Traffic Panel */
 .soap-traffic-panel {
   background: var(--surface);
