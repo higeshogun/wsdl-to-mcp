@@ -1,5 +1,25 @@
+import { useState } from 'react';
 import { useProjectStore } from '../../store/project-store';
 import { buildAndDownloadZip } from '../../zip/zip-builder';
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      className="snippet-copy-btn"
+      onClick={handleCopy}
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  );
+}
 
 export function DownloadStep() {
   const { config, generatedFiles, files } = useProjectStore();
@@ -10,15 +30,27 @@ export function DownloadStep() {
 
   const totalTools = generatedFiles.filter(f => f.path.includes('/tools/') && f.path !== 'src/tools/tool-registry.ts').length;
 
-  const configSnippet = `{
-  "mcpServers": {
-    "${config.projectName}": {
-      "command": "npx",
-      "args": ["tsx", "src/index.ts"],
-      "cwd": "/path/to/${config.projectName}"
+  // Build env block from config envVars
+  const envEntries: Record<string, string> = {};
+  for (const v of config.envVars) {
+    if (v.required) {
+      envEntries[v.name] = v.defaultValue || `<your-${v.name.toLowerCase().replace(/_/g, '-')}>`;
     }
   }
-}`;
+
+  const configSnippetObj: any = {
+    mcpServers: {
+      [config.projectName]: {
+        command: 'npx',
+        args: ['tsx', 'src/index.ts'],
+        cwd: `/path/to/${config.projectName}`,
+        ...(Object.keys(envEntries).length > 0 ? { env: envEntries } : {}),
+      },
+    },
+  };
+  const configSnippet = JSON.stringify(configSnippetObj, null, 2);
+
+  const cliCommand = `claude mcp add ${config.projectName} -- npx tsx src/index.ts`;
 
   return (
     <div className="step-content">
@@ -57,11 +89,17 @@ export function DownloadStep() {
           <li>
             <strong>Connect to Claude Desktop:</strong> Add this to your{' '}
             <code>claude_desktop_config.json</code>:
-            <pre><code>{configSnippet}</code></pre>
+            <div className="snippet-wrapper">
+              <CopyButton text={configSnippet} />
+              <pre><code>{configSnippet}</code></pre>
+            </div>
           </li>
           <li>
             <strong>Or use with Claude Code:</strong>
-            <pre><code>claude mcp add {config.projectName} -- npx tsx src/index.ts</code></pre>
+            <div className="snippet-wrapper">
+              <CopyButton text={cliCommand} />
+              <pre><code>{cliCommand}</code></pre>
+            </div>
           </li>
         </ol>
       </div>

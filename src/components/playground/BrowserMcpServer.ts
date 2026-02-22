@@ -23,6 +23,7 @@ export interface Tool {
   name: string;
   description?: string;
   inputSchema: any;
+  outputSchema?: any;
 }
 
 export interface SoapTrafficEntry {
@@ -41,6 +42,7 @@ interface ToolInfo {
   endpoint: string;
   targetNamespace: string;
   soapAction: string;
+  soapVersion: '1.1' | '1.2';
 }
 
 export class BrowserMcpServer {
@@ -55,16 +57,15 @@ export class BrowserMcpServer {
   private sessionTicket: string | null = null;
   private loginInProgress: Promise<void> | null = null;
 
-  private xsdSchemas: XsdSchema[];
   private elementNamespaceCache = new Map<string, string>();
   private endpointOverride: string | null = null;
+  private soapVersionOverride: '1.1' | '1.2' | null = null;
 
   constructor(
     wsdlDefinitions: WsdlDefinition[],
     xsdSchemas: XsdSchema[]
   ) {
     this.wsdlDefinitions = wsdlDefinitions;
-    this.xsdSchemas = xsdSchemas;
     this.registry = new TypeRegistry();
     xsdSchemas.forEach(s => {
       this.registry.addSchema(s);
@@ -80,6 +81,11 @@ export class BrowserMcpServer {
   /** Override the SOAP endpoint URL for all tools (replaces the URL from the WSDL). */
   setEndpointOverride(url: string | null): void {
     this.endpointOverride = url || null;
+  }
+
+  /** Override SOAP version for all tools (overrides auto-detected version). */
+  setSoapVersionOverride(version: '1.1' | '1.2' | null): void {
+    this.soapVersionOverride = version;
   }
 
   /** Find the targetNamespace of the XSD schema that defines a given element (by local name). */
@@ -164,8 +170,9 @@ export class BrowserMcpServer {
     console.log('[BrowserMcpServer] Login successful, session ticket obtained');
   }
 
-  getTools(): Tool[] {
+  getTools(): { tools: Tool[]; warnings: string[] } {
     const tools: Tool[] = [];
+    const warnings: string[] = [];
     const toolNamesUsed = new Set<string>();
 
     const ensureUniqueName = (name: string): string => {
@@ -233,6 +240,24 @@ export class BrowserMcpServer {
       return { inputMessage, inputSchema };
     };
 
+    const buildOutputSchema = (op: WsdlOperation, defMessages: WsdlMessage[]): any | undefined => {
+      if (!op.outputMessage) return undefined;
+      const outputMsgLocalName = getLocalName(op.outputMessage);
+      const outputMessage = defMessages.find(m => m.name === outputMsgLocalName)
+        || allMessages.find(m => m.name === outputMsgLocalName);
+      if (!outputMessage || outputMessage.parts.length === 0) return undefined;
+
+      const part = outputMessage.parts[0];
+      if (part.element) {
+        const el = this.registry.resolveElement(getLocalName(part.element));
+        if (el) {
+          const elSchema = elementToJsonSchema(el, this.registry);
+          return sanitizeSchema(elSchema);
+        }
+      }
+      return undefined;
+    };
+
     // Pass 1: Process all services first (these have proper SOAP endpoints)
     for (const def of this.wsdlDefinitions) {
       for (const service of def.services) {
@@ -245,7 +270,7 @@ export class BrowserMcpServer {
              const binding = def.bindings.find(b => b.name === bindingLocalName)
                || allBindings.find(b => b.name === bindingLocalName);
              if (!binding) {
-               console.warn(`[BrowserMcpServer]       ⚠ Binding not found: ${port.bindingName}`);
+               warnings.push(`Binding not found: ${port.bindingName} (port ${port.name} in service ${service.name})`);
                continue;
              }
 
@@ -253,7 +278,7 @@ export class BrowserMcpServer {
              const portType = def.portTypes.find(pt => pt.name === portTypeLocalName)
                || allPortTypes.find(pt => pt.name === portTypeLocalName);
              if (!portType) {
-               console.warn(`[BrowserMcpServer]       ⚠ PortType not found: ${binding.portTypeName}`);
+               warnings.push(`PortType not found: ${binding.portTypeName} (binding ${binding.name})`);
                continue;
              }
 
@@ -276,7 +301,8 @@ export class BrowserMcpServer {
                   d.portTypes.some(pt => pt.name === portType.name)
                 ) || def;
 
-                tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema) });
+                const outputSchema = buildOutputSchema(op, def.messages);
+                tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema });
                 const bindingOp = binding.operations.find(bo => bo.name === op.name);
                 this.tools.set(toolName, {
                     op,
@@ -284,7 +310,8 @@ export class BrowserMcpServer {
                     inputMessage,
                     endpoint: port.soapAddress,
                     targetNamespace: definingWsdl.targetNamespace,
-                    soapAction: bindingOp?.soapAction ?? ''
+                    soapAction: bindingOp?.soapAction ?? '',
+                    soapVersion: binding.soapVersion,
                 });
              }
         }
@@ -312,7 +339,8 @@ export class BrowserMcpServer {
 
           const { inputMessage, inputSchema } = buildInputSchema(op, def.messages);
 
-          tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema) });
+          const outputSchema = buildOutputSchema(op, def.messages);
+          tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema });
 
           this.tools.set(toolName, {
             op,
@@ -320,53 +348,72 @@ export class BrowserMcpServer {
             inputMessage,
             endpoint: 'http://localhost:8080/soap', // Default endpoint (will use endpointOverride if set)
             targetNamespace: def.targetNamespace,
-            soapAction: ''
+            soapAction: '',
+            soapVersion: '1.1',
           });
         }
       }
     }
 
     console.log(`[BrowserMcpServer] ✓ Total tools discovered: ${tools.length}`, tools.map(t => `"${t.name}"`).join(', '));
-    return tools;
+    return { tools, warnings };
+  }
+
+  /** Build a SOAP envelope for the given tool without sending it. */
+  buildEnvelope(name: string, args: any): string {
+    const toolInfo = this.tools.get(name);
+    if (!toolInfo) throw new Error(`Tool ${name} not found`);
+
+    const { op, inputMessage, targetNamespace } = toolInfo;
+    const version = this.soapVersionOverride || toolInfo.soapVersion;
+
+    let rootName = op.name;
+    let namespace = targetNamespace;
+
+    if (inputMessage && inputMessage.parts.length > 0) {
+      const part = inputMessage.parts[0];
+      if (part.element) {
+        rootName = getLocalName(part.element);
+        namespace = this.getElementNamespace(rootName) ?? targetNamespace;
+      }
+    }
+
+    const soapBody = jsonToXml(args, rootName, namespace);
+
+    // Include session header if available
+    let sessionHeaderXml = '';
+    if (this.sessionConfig && this.sessionCredentials && this.sessionTicket) {
+      const ns = this.sessionConfig.sessionHeaderNamespace;
+      const uid = escapeXml(this.sessionCredentials.userId);
+      const ticket = escapeXml(this.sessionTicket);
+      sessionHeaderXml = `<session xmlns="${ns}"><userID>${uid}</userID><sessionTicket>${ticket}</sessionTicket></session>`;
+    }
+
+    const envNs = version === '1.2'
+      ? 'http://www.w3.org/2003/05/soap-envelope'
+      : 'http://schemas.xmlsoap.org/soap/envelope/';
+
+    return `<soapenv:Envelope xmlns:soapenv="${envNs}">
+   <soapenv:Header>${sessionHeaderXml}</soapenv:Header>
+   <soapenv:Body>
+      ${soapBody}
+   </soapenv:Body>
+</soapenv:Envelope>`;
   }
 
   async callTool(name: string, args: any, proxyUrl: string, skipSession = false): Promise<string> {
     const toolInfo = this.tools.get(name);
     if (!toolInfo) throw new Error(`Tool ${name} not found`);
 
-    const { op, inputMessage, endpoint, targetNamespace, soapAction } = toolInfo;
+    const { endpoint, soapAction } = toolInfo;
+    const version = this.soapVersionOverride || toolInfo.soapVersion;
 
-    // Build session header if session auth is configured
-    let sessionHeaderXml = '';
+    // Ensure session before building envelope (so ticket is available)
     if (!skipSession && this.sessionConfig && this.sessionCredentials) {
       await this.ensureSession(proxyUrl);
-      if (this.sessionTicket) {
-        const ns = this.sessionConfig.sessionHeaderNamespace;
-        const uid = escapeXml(this.sessionCredentials.userId);
-        const ticket = escapeXml(this.sessionTicket);
-        sessionHeaderXml = `<session xmlns="${ns}"><userID>${uid}</userID><sessionTicket>${ticket}</sessionTicket></session>`;
-      }
     }
 
-    let rootName = op.name;
-    let namespace = targetNamespace;
-
-    if (inputMessage && inputMessage.parts.length > 0) {
-        const part = inputMessage.parts[0];
-        if (part.element) {
-            rootName = getLocalName(part.element);
-            namespace = this.getElementNamespace(rootName) ?? targetNamespace;
-        }
-    }
-
-    const soapBody = jsonToXml(args, rootName, namespace);
-
-    const envelope = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
-   <soapenv:Header>${sessionHeaderXml}</soapenv:Header>
-   <soapenv:Body>
-      ${soapBody}
-   </soapenv:Body>
-</soapenv:Envelope>`;
+    const envelope = this.buildEnvelope(name, args);
 
     // Use proxy
     // We expect the proxy to forward the request to the target URL.
@@ -380,13 +427,16 @@ export class BrowserMcpServer {
     const target = new URL(proxyUrl);
     target.searchParams.set('url', effectiveEndpoint);
 
+    // SOAP 1.2: Content-Type includes action, no SOAPAction header
+    // SOAP 1.1: text/xml with SOAPAction header
+    const headers: Record<string, string> = version === '1.2'
+      ? { 'Content-Type': `application/soap+xml; charset=utf-8; action="${soapAction}"` }
+      : { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': soapAction };
+
     try {
         const response = await fetch(target.toString(), {
             method: 'POST',
-            headers: {
-                'Content-Type': 'text/xml; charset=utf-8',
-                'SOAPAction': soapAction,
-            },
+            headers,
             body: envelope
         });
 

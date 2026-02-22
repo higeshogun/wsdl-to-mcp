@@ -60,6 +60,34 @@ export function ConfigureStep() {
         </div>
 
         <div className="form-group full-width">
+          <label>SOAP Version</label>
+          <div className="radio-group" style={{ flexDirection: 'row', gap: '12px' }}>
+            <label className="radio-option" style={{ flex: 1 }}>
+              <input
+                type="radio"
+                name="soapVersion"
+                value="1.1"
+                checked={config.soapVersion === '1.1'}
+                onChange={() => updateConfig({ soapVersion: '1.1' })}
+              />
+              <span>SOAP 1.1</span>
+              <span className="radio-desc">text/xml + SOAPAction header</span>
+            </label>
+            <label className="radio-option" style={{ flex: 1 }}>
+              <input
+                type="radio"
+                name="soapVersion"
+                value="1.2"
+                checked={config.soapVersion === '1.2'}
+                onChange={() => updateConfig({ soapVersion: '1.2' })}
+              />
+              <span>SOAP 1.2</span>
+              <span className="radio-desc">application/soap+xml</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="form-group full-width">
           <label>Authentication Type</label>
           <div className="radio-group">
             <label className="radio-option">

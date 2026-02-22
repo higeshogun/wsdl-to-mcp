@@ -604,6 +604,33 @@ body {
   font-size: 0.85rem;
 }
 
+/* Snippet wrapper with copy button */
+.snippet-wrapper {
+  position: relative;
+  margin-top: 8px;
+}
+.snippet-wrapper pre {
+  margin-top: 0;
+}
+.snippet-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  z-index: 1;
+}
+.snippet-copy-btn:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
 /* Buttons */
 .btn-primary {
   padding: 10px 24px;
@@ -712,6 +739,36 @@ body {
   font-size: 0.85rem;
 }
 
+/* Warnings Panel */
+.warnings-panel {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.05);
+}
+.warnings-count-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  background: var(--warning);
+  color: #000;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.warnings-list {
+  list-style: none;
+  padding: 8px 0 4px;
+}
+.warnings-list li {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  color: var(--warning);
+  line-height: 1.5;
+}
+.warnings-list li::before {
+  content: '⚠ ';
+}
+
 /* Chatbot */
 .chatbot {
   display: flex;
@@ -785,6 +842,29 @@ body {
   border-color: var(--error);
   color: var(--error);
   background: rgba(239, 68, 68, 0.08);
+}
+
+.btn-dry-run {
+  display: flex;
+  align-items: center;
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-dry-run:hover {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.btn-dry-run--active {
+  border-color: var(--warning);
+  color: #000;
+  background: var(--warning);
+  font-weight: 600;
 }
 
 .messages {
@@ -1045,6 +1125,22 @@ body {
   color: var(--text-muted);
 }
 
+.tool-response-details {
+  margin-top: 6px;
+}
+.tool-response-details > summary {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.tool-response-details > summary:hover {
+  color: var(--primary-hover);
+}
+.tool-response-details[open] > summary {
+  margin-bottom: 4px;
+}
+
 /* SOAP Traffic Panel */
 .soap-traffic-panel {
   background: var(--surface);
@@ -1185,4 +1281,109 @@ body {
   overflow: auto;
   user-select: text;
   cursor: text;
+}
+
+/* Test Generation Step Styles */
+.test-gen-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.test-gen-header h2 {
+  color: var(--text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.test-gen-header p {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.test-gen-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.test-gen-section h3 {
+  color: var(--text);
+  margin-bottom: var(--spacing-md);
+  font-size: 1.1rem;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.checkmark {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  position: relative;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark::after {
+  content: '✓';
+  position: absolute;
+  top: -2px;
+  left: 1px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.test-gen-summary {
+  margin-bottom: var(--spacing-lg);
+}
+
+.test-gen-summary h3 {
+  color: var(--text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.test-gen-summary p {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.no-selection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.no-selection p {
+  margin: 0;
+  font-style: italic;
 }
