@@ -1,4 +1,4 @@
-const STEPS = ['Upload', 'Configure', 'Review', 'Download', 'Try It Out'];
+const STEPS = ['Upload', 'Configure', 'Review', 'Download', 'Test Scripts', 'Try It Out'];
 
 interface StepperProps {
   current: number;

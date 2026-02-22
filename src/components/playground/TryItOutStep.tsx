@@ -73,6 +73,12 @@ export function TryItOutStep() {
     server.setEndpointOverride(config.baseUrl || null);
   }, [server, config.baseUrl]);
 
+  // Apply SOAP version override from Configure step
+  useEffect(() => {
+    if (!server) return;
+    server.setSoapVersionOverride(config.soapVersion || null);
+  }, [server, config.soapVersion]);
+
   // Wire session config into server whenever server or credentials change
   useEffect(() => {
     if (!server || config.authType !== 'session' || !config.sessionConfig) return;
@@ -90,8 +96,8 @@ export function TryItOutStep() {
   }, [server, config, sessionUserId, sessionPassword, sessionLoginType, sessionLoginEndpoint]);
 
   // Get tools list for display
-  const tools: Tool[] = useMemo(() => {
-    if (!server) return [];
+  const { tools, warnings } = useMemo(() => {
+    if (!server) return { tools: [] as Tool[], warnings: [] as string[] };
     return server.getTools();
   }, [server]);
 
@@ -196,12 +202,44 @@ export function TryItOutStep() {
                       ))}
                     </div>
                   )}
+                  {tool.outputSchema?.properties && Object.keys(tool.outputSchema.properties).length > 0 && (
+                    <details className="tool-response-details">
+                      <summary>
+                        Response fields ({Object.keys(tool.outputSchema.properties).length})
+                      </summary>
+                      <div className="tool-item-schema">
+                        {Object.entries(tool.outputSchema.properties).map(([key, val]: [string, any]) => (
+                          <span key={key} className="tool-param-tag">
+                            {key}
+                            {val.type && <span className="tool-param-type">: {val.type}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </details>
       </div>
+
+      {/* Warnings Panel */}
+      {warnings.length > 0 && (
+        <div className="config-panel warnings-panel" style={{ marginBottom: '0' }}>
+          <details>
+            <summary style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+              WSDL Warnings
+              <span className="warnings-count-badge">{warnings.length}</span>
+            </summary>
+            <ul className="warnings-list">
+              {warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
 
       {/* Session Credentials (shown only when session auth is configured) */}
       {config.authType === 'session' && config.sessionConfig && (

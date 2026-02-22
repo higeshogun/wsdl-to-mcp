@@ -44,11 +44,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const result = parseAllFiles(newFiles);
 
+    // Auto-detect SOAP version from parsed bindings
+    const has12 = result.wsdlDefinitions.some(d => d.bindings.some(b => b.soapVersion === '1.2'));
+    const detectedVersion = has12 ? '1.2' as const : '1.1' as const;
+
     set({
       files: newFiles,
       wsdlDefinitions: result.wsdlDefinitions,
       xsdSchemas: result.xsdSchemas,
       parseErrors: result.errors,
+      config: { ...get().config, soapVersion: detectedVersion },
     });
   },
 

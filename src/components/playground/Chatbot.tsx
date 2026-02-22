@@ -39,6 +39,7 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [soapLog, setSoapLog] = useState<SoapTrafficEntry[]>([]);
+  const [dryRun, setDryRun] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
   const processTurn = async (currentMessages: NormalizedMessage[], depth = 0) => {
     if (depth >= 10) throw new Error('Max tool call rounds reached (10). The tool may be unavailable or returning errors.');
     // 1. Get available tools from MCP server (excluding session-managed ones)
-    const tools: ToolDefinition[] = server.getTools()
+    const tools: ToolDefinition[] = server.getTools().tools
       .filter(t => !hiddenToolNames?.has(t.name))
       .map(t => ({
         name: t.name,
@@ -113,6 +114,27 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
     if (toolUses.length > 0) {
       const toolResults = await Promise.all(
         toolUses.map(async (toolUse) => {
+          // Dry-run mode: build envelope but don't send
+          if (dryRun) {
+            try {
+              const envelope = server.buildEnvelope(toolUse.name!, toolUse.input!);
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: toolUse.id,
+                name: toolUse.name,
+                content: `[DRY RUN] SOAP Envelope:\n${envelope}`,
+              };
+            } catch (err: any) {
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: toolUse.id,
+                name: toolUse.name,
+                content: `[DRY RUN] Error building envelope: ${err.message}`,
+                is_error: true,
+              };
+            }
+          }
+
           try {
             const callResult = await server.callTool(
               toolUse.name!,
@@ -149,7 +171,7 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
     setSoapLog([]);
   };
 
-  const tools: ToolDefinition[] = server.getTools()
+  const tools: ToolDefinition[] = server.getTools().tools
     .filter(t => !hiddenToolNames?.has(t.name))
     .map(t => ({
       name: t.name,
@@ -164,14 +186,23 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
     <div className="chatbot">
       <div className="chatbot-header">
         <span className="chatbot-header-title">Chat</span>
-        <button
-          className="btn-clear-chat"
-          onClick={clearChat}
-          disabled={loading}
-          title="Clear chat and start a new session"
-        >
-          ↺ New Chat
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            className={`btn-dry-run${dryRun ? ' btn-dry-run--active' : ''}`}
+            onClick={() => setDryRun(d => !d)}
+            title={dryRun ? 'Dry-run ON: tool calls will show SOAP envelope without sending' : 'Enable dry-run to preview SOAP envelopes without sending'}
+          >
+            {dryRun ? 'Dry Run ON' : 'Dry Run'}
+          </button>
+          <button
+            className="btn-clear-chat"
+            onClick={clearChat}
+            disabled={loading}
+            title="Clear chat and start a new session"
+          >
+            ↺ New Chat
+          </button>
+        </div>
       </div>
       <details className="system-prompt-panel">
         <summary>System Prompt</summary>

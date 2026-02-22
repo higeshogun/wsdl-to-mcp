@@ -25,6 +25,10 @@ import { generateToolRegistryTs } from './templates/tool-registry-ts';
 import { generateEnvExample } from './templates/env-example';
 import { generateReadmeMd } from './templates/readme-md';
 import { generateSchemaUtilsTs } from './templates/schema-utils-ts';
+import { generatePytestTestsWithClient } from './templates/test-pytest';
+import { generatePostmanCollection } from './templates/test-postman';
+import { generateSoapUIProject } from './templates/test-soapui';
+import { generateK6ScriptWithScenarios } from './templates/test-k6';
 
 export function generateProject(
   wsdlDefinitions: WsdlDefinition[],
@@ -76,6 +80,37 @@ export function generateProject(
     path: 'src/tools/tool-registry.ts',
     content: generateToolRegistryTs(services, config),
   });
+
+  // Test files (if test config is provided)
+  if (config.testConfig) {
+    if (config.testConfig.formats.includes('pytest')) {
+      files.push({
+        path: 'tests/test_regression.py',
+        content: generatePytestTestsWithClient(services, config, registry),
+      });
+    }
+
+    if (config.testConfig.formats.includes('postman')) {
+      files.push({
+        path: 'tests/regression-tests.postman_collection.json',
+        content: generatePostmanCollection(services, config, registry),
+      });
+    }
+
+    if (config.testConfig.formats.includes('soapui')) {
+      files.push({
+        path: 'tests/regression-tests-soapui-project.xml',
+        content: generateSoapUIProject(services, config, registry),
+      });
+    }
+
+    if (config.testConfig.formats.includes('k6')) {
+      files.push({
+        path: 'tests/load-test.k6.js',
+        content: generateK6ScriptWithScenarios(services, config, registry),
+      });
+    }
+  }
 
   // Entry point
   files.push({ path: 'src/index.ts', content: generateIndexTs(services, config) });

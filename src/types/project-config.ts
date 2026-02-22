@@ -11,7 +11,12 @@ export interface ProjectConfig {
     userIdField: string;
     passwordField: string;
   };
+  soapVersion: '1.1' | '1.2';
   envVars: EnvVar[];
+  testConfig?: {
+    formats: ('pytest' | 'postman' | 'soapui' | 'k6')[];
+    categories: ('smoke' | 'negative' | 'boundary')[];
+  };
 }
 
 export interface EnvVar {
@@ -28,8 +33,13 @@ export function defaultConfig(): ProjectConfig {
     toolPrefix: 'api',
     baseUrl: '',
     authType: 'none',
+    soapVersion: '1.1',
     envVars: [
       { name: 'BASE_URL', description: 'SOAP service base URL', required: true, defaultValue: '' },
     ],
+    testConfig: {
+      formats: ['pytest', 'postman', 'soapui', 'k6'],
+      categories: ['smoke', 'negative', 'boundary'],
+    },
   };
 }

@@ -35,6 +35,7 @@ export interface WsdlBinding {
   name: string;
   portTypeName: string;
   soapStyle: 'document' | 'rpc';
+  soapVersion: '1.1' | '1.2';
   operations: WsdlBindingOperation[];
 }
 

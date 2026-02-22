@@ -5,6 +5,7 @@ import { UploadStep } from './components/steps/UploadStep';
 import { ConfigureStep } from './components/steps/ConfigureStep';
 import { ReviewStep } from './components/steps/ReviewStep';
 import { DownloadStep } from './components/steps/DownloadStep';
+import { TestGenerationStep } from './components/steps/TestGenerationStep';
 import { TryItOutStep } from './components/playground/TryItOutStep';
 import './App.css';
 
@@ -18,10 +19,10 @@ function App() {
   );
   const hasGenerated = generatedFiles.length > 0;
 
-  const canAdvance = [hasFiles && hasOperations, true, hasGenerated, true];
+  const canAdvance = [hasFiles && hasOperations, true, hasGenerated, true, true];
 
   const handleNext = () => {
-    if (currentStep < 4) setStep(currentStep + 1);
+    if (currentStep < 5) setStep(currentStep + 1);
   };
 
   const handlePrev = () => {
@@ -33,6 +34,7 @@ function App() {
     <ConfigureStep key="configure" />,
     <ReviewStep key="review" />,
     <DownloadStep key="download" />,
+    <TestGenerationStep key="testgen" />,
     <TryItOutStep key="tryitout" />,
   ];
 
@@ -79,6 +81,11 @@ function App() {
             </div>
             <div className="about-step">
               <span className="about-step-number">5</span>
+              <strong>Test Scripts</strong>
+              <span>Generate regression test scripts in pytest, Postman, SoapUI, and k6 formats</span>
+            </div>
+            <div className="about-step">
+              <span className="about-step-number">6</span>
               <strong>Try It Out</strong>
               <span>Test your tools live with any LLM — right in the browser</span>
             </div>
@@ -123,7 +130,7 @@ function App() {
         <button
           className="btn-primary"
           onClick={handleNext}
-          disabled={currentStep === 4 || (currentStep === 0 && !canAdvance[0])}
+          disabled={currentStep === 5 || (currentStep === 0 && !canAdvance[0])}
         >
           {currentStep === 2 ? 'Generate & Download' : 'Next'}
         </button>

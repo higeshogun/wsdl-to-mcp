@@ -64,9 +64,10 @@ function parseBindings(root: Element): WsdlBinding[] {
     const typeName = bindEl.getAttribute('type') || '';
     const portTypeName = getLocalName(typeName);
 
-    const soapBindEl =
-      getFirstChildElement(bindEl, 'binding', SOAP_NS) ||
-      getFirstChildElement(bindEl, 'binding', SOAP12_NS);
+    const soapBindEl11 = getFirstChildElement(bindEl, 'binding', SOAP_NS);
+    const soapBindEl12 = getFirstChildElement(bindEl, 'binding', SOAP12_NS);
+    const soapBindEl = soapBindEl11 || soapBindEl12;
+    const soapVersion: '1.1' | '1.2' = soapBindEl12 ? '1.2' : '1.1';
     const soapStyle = (soapBindEl?.getAttribute('style') || 'document') as 'document' | 'rpc';
 
     const operations: WsdlBindingOperation[] = getChildElements(bindEl, 'operation', WSDL_NS).map(opEl => {
@@ -78,7 +79,7 @@ function parseBindings(root: Element): WsdlBinding[] {
       return { name: opName, soapAction };
     });
 
-    return { name, portTypeName, soapStyle, operations };
+    return { name, portTypeName, soapStyle, soapVersion, operations };
   });
 }
 
