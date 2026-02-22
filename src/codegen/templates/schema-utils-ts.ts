@@ -45,6 +45,11 @@ export function sanitizeSchema(schema: any): any {
     }
   }
 
+  // Ensure every schema object has a type — LLM APIs reject schemas without one
+  if (!out.type && !out.enum) {
+    out.type = out.properties ? 'object' : 'string';
+  }
+
   return out;
 }
 `;
