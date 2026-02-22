@@ -63,7 +63,19 @@ export function formatSoapError(error: unknown): { text: string; isError: true }
     }
   }
 
-  const message = error instanceof Error ? error.message : String(error);
+  let message = error instanceof Error ? error.message : String(error);
+
+  // Check for HTML response in error message (common with node-soap)
+  const trimmed = message.trim().toLowerCase();
+  if (trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html')) {
+    const titleMatch = message.match(/<title>(.*?)<\/title>/i);
+    if (titleMatch) {
+      message = 'SOAP Request failed with HTML response: ' + titleMatch[1].trim();
+    } else {
+      message = 'SOAP Request failed with HTML response';
+    }
+  }
+
   return {
     text: JSON.stringify({ error: true, message }, null, 2),
     isError: true,

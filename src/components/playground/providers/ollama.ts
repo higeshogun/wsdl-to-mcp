@@ -2,6 +2,7 @@ import type {
   LLMProvider, ProviderConfig, ModelOption, ToolDefinition,
   NormalizedMessage, SendMessageResult, ContentBlock,
 } from './types';
+import { sanitizeSchema } from './schema-utils';
 
 // Models known to support tool/function calling in Ollama
 const KNOWN_TOOL_CAPABLE_FAMILIES = [
@@ -76,11 +77,11 @@ export const ollamaProvider: LLMProvider = {
       function: {
         name: t.name,
         description: t.description,
-        parameters: {
+        parameters: sanitizeSchema({
           type: 'object',
           properties: t.inputSchema.properties,
           required: t.inputSchema.required,
-        },
+        }),
       },
     }));
 

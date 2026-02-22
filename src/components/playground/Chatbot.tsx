@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
-import type { BrowserMcpServer } from './BrowserMcpServer';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { BrowserMcpServer, SoapTrafficEntry } from './BrowserMcpServer';
 import type { NormalizedMessage, ProviderConfig, ToolDefinition, ProviderType } from './providers/types';
 import { getProvider } from './providers/index';
 
@@ -10,14 +12,39 @@ interface ChatbotProps {
   baseUrl: string;
   model: string;
   server: BrowserMcpServer;
+  /** Tool names to hide from the LLM (handled automatically, e.g. Login/Logout) */
+  hiddenToolNames?: Set<string>;
 }
 
-export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: ChatbotProps) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [text]);
+  return (
+    <button className="soap-copy-btn" onClick={copy} title="Copy to clipboard">
+      {copied ? '✓ Copied' : 'Copy'}
+    </button>
+  );
+}
+
+export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hiddenToolNames }: ChatbotProps) {
   const [messages, setMessages] = useState<NormalizedMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [soapLog, setSoapLog] = useState<SoapTrafficEntry[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    server.onSoapTraffic = (entry) => setSoapLog(prev => [...prev, entry]);
+    return () => { server.onSoapTraffic = undefined; };
+  }, [server]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,16 +76,18 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
 
   const processTurn = async (currentMessages: NormalizedMessage[], depth = 0) => {
     if (depth >= 10) throw new Error('Max tool call rounds reached (10). The tool may be unavailable or returning errors.');
-    // 1. Get available tools from MCP server
-    const tools: ToolDefinition[] = server.getTools().map(t => ({
-      name: t.name,
-      description: t.description || 'No description',
-      inputSchema: {
-        type: 'object' as const,
-        properties: t.inputSchema.properties || {},
-        required: t.inputSchema.required || [],
-      },
-    }));
+    // 1. Get available tools from MCP server (excluding session-managed ones)
+    const tools: ToolDefinition[] = server.getTools()
+      .filter(t => !hiddenToolNames?.has(t.name))
+      .map(t => ({
+        name: t.name,
+        description: t.description || 'No description',
+        inputSchema: {
+          type: 'object' as const,
+          properties: t.inputSchema.properties || {},
+          required: t.inputSchema.required || [],
+        },
+      }));
 
     console.log(`[Chatbot] Sending ${tools.length} tools to ${provider}:`, tools.map(t => t.name));
 
@@ -117,17 +146,21 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
     setMessages([]);
     setError(null);
     setInput('');
+    setSoapLog([]);
   };
 
-  const tools: ToolDefinition[] = server.getTools().map(t => ({
-    name: t.name,
-    description: t.description || 'No description',
-    inputSchema: { type: 'object' as const, properties: t.inputSchema.properties || {}, required: t.inputSchema.required || [] },
-  }));
+  const tools: ToolDefinition[] = server.getTools()
+    .filter(t => !hiddenToolNames?.has(t.name))
+    .map(t => ({
+      name: t.name,
+      description: t.description || 'No description',
+      inputSchema: { type: 'object' as const, properties: t.inputSchema.properties || {}, required: t.inputSchema.required || [] },
+    }));
   const p = getProvider(provider);
   const systemPrompt = p.getSystemPrompt ? p.getSystemPrompt(tools) : null;
 
   return (
+    <>
     <div className="chatbot">
       <div className="chatbot-header">
         <span className="chatbot-header-title">Chat</span>
@@ -152,7 +185,13 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
             <div className="message-role">{m.role}</div>
             <div className="message-content">
               {m.content.map((block: any, j: number) => {
-                if (block.type === 'text') return <div key={j}>{block.text}</div>;
+                if (block.type === 'text') return (
+                  <div key={j} className="message-text">
+                    {m.role === 'assistant'
+                      ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+                      : block.text}
+                  </div>
+                );
                 if (block.type === 'tool_use') return (
                   <div key={j} className="tool-use">
                     Using tool: <code>{block.name}</code>
@@ -187,5 +226,34 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server }: 
         </button>
       </form>
     </div>
+
+    {soapLog.length > 0 && (
+      <details className="soap-traffic-panel">
+        <summary>
+          SOAP Traffic
+          <span className="soap-count-badge">{soapLog.length}</span>
+        </summary>
+        <div className="soap-log-list">
+          {soapLog.map(entry => (
+            <div key={entry.id} className={`soap-log-entry${entry.isError ? ' soap-log-entry--error' : ''}`}>
+              <div className="soap-log-entry-header">
+                <code className="soap-log-tool">{entry.toolName}</code>
+                <span className="soap-log-timestamp">{entry.timestamp.toLocaleTimeString()}</span>
+                {entry.isError && <span className="soap-log-error-badge">Error</span>}
+              </div>
+              <details className="soap-log-sub">
+                <summary><span>Request</span><CopyButton text={entry.request} /></summary>
+                <pre className="soap-xml">{entry.request}</pre>
+              </details>
+              <details className="soap-log-sub">
+                <summary><span>Response</span><CopyButton text={entry.response} /></summary>
+                <pre className="soap-xml">{entry.response}</pre>
+              </details>
+            </div>
+          ))}
+        </div>
+      </details>
+    )}
+    </>
   );
 }

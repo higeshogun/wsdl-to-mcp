@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useProjectStore } from '../../store/project-store';
 import { BrowserMcpServer } from './BrowserMcpServer';
 import type { Tool } from './BrowserMcpServer';
+import type { PlaygroundSessionConfig, PlaygroundSessionCredentials } from './BrowserMcpServer';
 import { Chatbot } from './Chatbot';
 import { IndexedDBStorage } from './IndexedDBStorage';
 import { WORKER_SCRIPT } from '../common/cors-proxy-worker';
@@ -11,7 +12,7 @@ import type { ProviderType, ProviderConfig, ModelOption } from './providers/type
 const storage = new IndexedDBStorage();
 
 export function TryItOutStep() {
-  const { wsdlDefinitions, xsdSchemas } = useProjectStore();
+  const { wsdlDefinitions, xsdSchemas, config } = useProjectStore();
   const [provider, setProvider] = useState<ProviderType>((import.meta.env.VITE_DEFAULT_PROVIDER as ProviderType) || 'ollama');
   const [apiKey, setApiKey] = useState('');
   const [proxyUrl, setProxyUrl] = useState(import.meta.env.VITE_DEFAULT_PROXY_URL || '');
@@ -23,6 +24,10 @@ export function TryItOutStep() {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [server, setServer] = useState<BrowserMcpServer | null>(null);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  const [sessionUserId, setSessionUserId] = useState('');
+  const [sessionPassword, setSessionPassword] = useState('');
+  const [sessionLoginType, setSessionLoginType] = useState('');
+  const [sessionLoginEndpoint, setSessionLoginEndpoint] = useState('');
 
   // Load config on mount
   useEffect(() => {
@@ -32,6 +37,10 @@ export function TryItOutStep() {
     storage.get<string>('baseUrl').then((val) => val && setBaseUrl(val));
     storage.get<string>('model').then((val) => val && setModel(val));
     storage.get<string>('customModel').then((val) => val && setCustomModel(val));
+    storage.get<string>('sessionUserId').then((val) => val && setSessionUserId(val));
+    storage.get<string>('sessionPassword').then((val) => val && setSessionPassword(val));
+    storage.get<string>('sessionLoginType').then((val) => val && setSessionLoginType(val));
+    storage.get<string>('sessionLoginEndpoint').then((val) => val && setSessionLoginEndpoint(val));
   }, []);
 
   // Save config on change
@@ -41,6 +50,10 @@ export function TryItOutStep() {
   useEffect(() => { if (baseUrl) storage.set('baseUrl', baseUrl); }, [baseUrl]);
   useEffect(() => { if (model) storage.set('model', model); }, [model]);
   useEffect(() => { if (customModel) storage.set('customModel', customModel); }, [customModel]);
+  useEffect(() => { if (sessionUserId) storage.set('sessionUserId', sessionUserId); }, [sessionUserId]);
+  useEffect(() => { if (sessionPassword) storage.set('sessionPassword', sessionPassword); }, [sessionPassword]);
+  useEffect(() => { storage.set('sessionLoginType', sessionLoginType); }, [sessionLoginType]);
+  useEffect(() => { storage.set('sessionLoginEndpoint', sessionLoginEndpoint); }, [sessionLoginEndpoint]);
 
   // Init server
   useEffect(() => {
@@ -54,11 +67,40 @@ export function TryItOutStep() {
     }
   }, [wsdlDefinitions, xsdSchemas]);
 
+  // Apply endpoint override from Configure step (replaces IP-based URLs from WSDL)
+  useEffect(() => {
+    if (!server) return;
+    server.setEndpointOverride(config.baseUrl || null);
+  }, [server, config.baseUrl]);
+
+  // Wire session config into server whenever server or credentials change
+  useEffect(() => {
+    if (!server || config.authType !== 'session' || !config.sessionConfig) return;
+    const sessionCfg: PlaygroundSessionConfig = {
+      loginOperation: config.sessionConfig.loginOperation,
+      sessionHeaderNamespace: config.sessionConfig.sessionHeaderNamespace,
+      loginEndpoint: sessionLoginEndpoint || undefined,
+    };
+    const creds: PlaygroundSessionCredentials = {
+      userId: sessionUserId,
+      password: sessionPassword,
+      loginType: sessionLoginType,
+    };
+    server.setSessionConfig(sessionCfg, creds);
+  }, [server, config, sessionUserId, sessionPassword, sessionLoginType, sessionLoginEndpoint]);
+
   // Get tools list for display
   const tools: Tool[] = useMemo(() => {
     if (!server) return [];
     return server.getTools();
   }, [server]);
+
+  // Tool names to hide from the LLM when session auth is configured (login/logout are auto-managed)
+  const hiddenToolNames = useMemo(() => {
+    if (!server || config.authType !== 'session' || !config.sessionConfig) return undefined;
+    const ops = [config.sessionConfig.loginOperation, config.sessionConfig.logoutOperation].filter(Boolean);
+    return server.getToolNamesForOperations(ops);
+  }, [server, config]);
 
   // Reset models and base URL when provider changes
   useEffect(() => {
@@ -160,6 +202,80 @@ export function TryItOutStep() {
           )}
         </details>
       </div>
+
+      {/* Session Credentials (shown only when session auth is configured) */}
+      {config.authType === 'session' && config.sessionConfig && (
+        <div className="config-panel" style={{ marginBottom: '0' }}>
+          <details open>
+            <summary style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '15px' }}>
+              Session Credentials
+              {sessionUserId && <span className="tools-count-badge" style={{ background: 'var(--success, #22c55e)' }}>configured</span>}
+            </summary>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Login operation: <code>{config.sessionConfig.loginOperation}</code> &nbsp;|&nbsp;
+              Namespace: <code>{config.sessionConfig.sessionHeaderNamespace}</code>
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>User ID:</label>
+                <input
+                  type="text"
+                  value={sessionUserId}
+                  onChange={e => setSessionUserId(e.target.value)}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                  placeholder="username"
+                  autoComplete="username"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>Password:</label>
+                <input
+                  type="password"
+                  value={sessionPassword}
+                  onChange={e => setSessionPassword(e.target.value)}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                  placeholder="password"
+                  autoComplete="current-password"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>Login Type:</label>
+                <input
+                  type="text"
+                  value={sessionLoginType}
+                  onChange={e => setSessionLoginType(e.target.value)}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                  placeholder="e.g. CreateSession, STANDARD"
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  onClick={() => server?.clearSession()}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}
+                  title="Force a fresh login on the next tool call"
+                >
+                  Reset Session
+                </button>
+              </div>
+            </div>
+            <div style={{ marginTop: '10px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
+                Login Endpoint <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>(if different from service endpoint)</span>:
+              </label>
+              <input
+                type="text"
+                value={sessionLoginEndpoint}
+                onChange={e => setSessionLoginEndpoint(e.target.value)}
+                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                placeholder={config.baseUrl || 'https://...'}
+              />
+            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+              Login happens automatically before the first tool call. Click "Reset Session" to force re-login.
+            </p>
+          </details>
+        </div>
+      )}
 
       {/* LLM Configuration */}
       <div className="config-panel" style={{ marginBottom: '0' }}>
@@ -295,6 +411,7 @@ export function TryItOutStep() {
           baseUrl={baseUrl}
           model={model === 'custom' ? customModel : model}
           server={server!}
+          hiddenToolNames={hiddenToolNames}
         />
       ) : (
         <div className="placeholder-message">
