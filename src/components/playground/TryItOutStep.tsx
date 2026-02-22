@@ -35,6 +35,7 @@ export function TryItOutStep() {
   const [editingSchema, setEditingSchema] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+  const [nsOverrides, setNsOverrides] = useState<Record<string, string>>({});
 
   // Load config on mount
   useEffect(() => {
@@ -51,6 +52,7 @@ export function TryItOutStep() {
     storage.get<string>('soapEndpoint').then((val) => val && setSoapEndpoint(val));
     storage.get<string>('sessionHeaderNs').then((val) => val && setSessionHeaderNs(val));
     storage.get<Record<string, any>>('schemaOverrides').then((val) => val && setSchemaOverrides(val));
+    storage.get<Record<string, string>>('nsOverrides').then((val) => val && setNsOverrides(val));
   }, []);
 
   // Save config on change
@@ -67,6 +69,7 @@ export function TryItOutStep() {
   useEffect(() => { storage.set('soapEndpoint', soapEndpoint); }, [soapEndpoint]);
   useEffect(() => { storage.set('sessionHeaderNs', sessionHeaderNs); }, [sessionHeaderNs]);
   useEffect(() => { storage.set('schemaOverrides', schemaOverrides); }, [schemaOverrides]);
+  useEffect(() => { storage.set('nsOverrides', nsOverrides); }, [nsOverrides]);
 
   // Init server
   useEffect(() => {
@@ -95,6 +98,12 @@ export function TryItOutStep() {
     server.setSoapVersionOverride(config.soapVersion || null);
   }, [server, config.soapVersion]);
 
+  // Apply namespace overrides
+  useEffect(() => {
+    if (!server) return;
+    server.setNamespaceOverrides(nsOverrides);
+  }, [server, nsOverrides]);
+
   // Wire session config into server whenever server or credentials change
   useEffect(() => {
     if (!server || config.authType !== 'session' || !config.sessionConfig) return;
@@ -116,6 +125,16 @@ export function TryItOutStep() {
     if (!server) return { tools: [] as Tool[], warnings: [] as string[] };
     return server.getTools();
   }, [server]);
+
+  // Get discovered namespaces from the server
+  const discoveredNamespaces = useMemo(() => {
+    if (!server) return { wsdlNamespaces: [], elementNamespaces: [] };
+    return server.getDiscoveredNamespaces();
+  }, [server]);
+
+  const allNamespaces = useMemo(() => {
+    return [...discoveredNamespaces.wsdlNamespaces, ...discoveredNamespaces.elementNamespaces];
+  }, [discoveredNamespaces]);
 
   // Apply schema overrides to tools for display and LLM usage
   const effectiveTools = useMemo(() => {
@@ -394,6 +413,49 @@ export function TryItOutStep() {
                 </span>
               </div>
             </>
+          )}
+
+          {/* Namespace Overrides */}
+          {allNamespaces.length > 0 && (
+            <details className="ns-overrides-section">
+              <summary style={{ fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                Namespace Overrides
+                {Object.keys(nsOverrides).length > 0 && (
+                  <span className="tools-count-badge" style={{ background: 'var(--warning)', color: '#000', marginLeft: '6px' }}>
+                    {Object.keys(nsOverrides).length}
+                  </span>
+                )}
+              </summary>
+              <div style={{ marginTop: '10px' }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  Override XML namespaces used in SOAP envelopes. Leave blank to use the original.
+                </p>
+                {allNamespaces.map(ns => (
+                  <div key={ns} className="ns-override-row">
+                    <div className="ns-override-original" title={ns}>
+                      {ns}
+                    </div>
+                    <input
+                      type="text"
+                      className="ns-override-input"
+                      value={nsOverrides[ns] || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNsOverrides(prev => {
+                          if (!val) {
+                            const next = { ...prev };
+                            delete next[ns];
+                            return next;
+                          }
+                          return { ...prev, [ns]: val };
+                        });
+                      }}
+                      placeholder="Override namespace URI..."
+                    />
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </details>
       </div>
