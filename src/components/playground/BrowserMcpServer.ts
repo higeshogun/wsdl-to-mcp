@@ -101,7 +101,18 @@ export class BrowserMcpServer {
 
   clearSession(): void {
     this.sessionTicket = null;
+    this.onSessionChange?.();
   }
+
+  /** Get current session status. */
+  getSessionStatus(): 'disconnected' | 'connecting' | 'connected' {
+    if (this.loginInProgress) return 'connecting';
+    if (this.sessionTicket) return 'connected';
+    return 'disconnected';
+  }
+
+  /** Callback fired when session state changes. */
+  onSessionChange?: () => void;
 
   /** Return tool names whose underlying operation name matches any of the given operation names. */
   getToolNamesForOperations(operationNames: string[]): Set<string> {
@@ -129,8 +140,10 @@ export class BrowserMcpServer {
       await this.loginInProgress;
       return;
     }
+    this.onSessionChange?.();
     this.loginInProgress = this.doLogin(proxyUrl).finally(() => {
       this.loginInProgress = null;
+      this.onSessionChange?.();
     });
     await this.loginInProgress;
   }
@@ -167,6 +180,7 @@ export class BrowserMcpServer {
       throw new Error('Login failed: sessionTicket not found in response. Check credentials and login operation.');
     }
     this.sessionTicket = ticketEl.textContent;
+    this.onSessionChange?.();
     console.log('[BrowserMcpServer] Login successful, session ticket obtained');
   }
 
