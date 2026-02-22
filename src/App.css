@@ -769,6 +769,29 @@ body {
   content: '⚠ ';
 }
 
+/* Session Status Badge */
+.session-status-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.session-status-badge--connected {
+  background: var(--success);
+  color: #fff;
+}
+.session-status-badge--connecting {
+  background: var(--warning);
+  color: #000;
+}
+.session-status-badge--disconnected {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
 /* Chatbot */
 .chatbot {
   display: flex;

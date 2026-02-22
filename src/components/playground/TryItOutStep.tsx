@@ -28,6 +28,9 @@ export function TryItOutStep() {
   const [sessionPassword, setSessionPassword] = useState('');
   const [sessionLoginType, setSessionLoginType] = useState('');
   const [sessionLoginEndpoint, setSessionLoginEndpoint] = useState('');
+  const [soapEndpoint, setSoapEndpoint] = useState('');
+  const [sessionHeaderNs, setSessionHeaderNs] = useState('');
+  const [sessionStatus, setSessionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
   // Load config on mount
   useEffect(() => {
@@ -41,6 +44,8 @@ export function TryItOutStep() {
     storage.get<string>('sessionPassword').then((val) => val && setSessionPassword(val));
     storage.get<string>('sessionLoginType').then((val) => val && setSessionLoginType(val));
     storage.get<string>('sessionLoginEndpoint').then((val) => val && setSessionLoginEndpoint(val));
+    storage.get<string>('soapEndpoint').then((val) => val && setSoapEndpoint(val));
+    storage.get<string>('sessionHeaderNs').then((val) => val && setSessionHeaderNs(val));
   }, []);
 
   // Save config on change
@@ -54,24 +59,29 @@ export function TryItOutStep() {
   useEffect(() => { if (sessionPassword) storage.set('sessionPassword', sessionPassword); }, [sessionPassword]);
   useEffect(() => { storage.set('sessionLoginType', sessionLoginType); }, [sessionLoginType]);
   useEffect(() => { storage.set('sessionLoginEndpoint', sessionLoginEndpoint); }, [sessionLoginEndpoint]);
+  useEffect(() => { storage.set('soapEndpoint', soapEndpoint); }, [soapEndpoint]);
+  useEffect(() => { storage.set('sessionHeaderNs', sessionHeaderNs); }, [sessionHeaderNs]);
 
   // Init server
   useEffect(() => {
     if (wsdlDefinitions.length > 0) {
       console.log(`[TryItOutStep] Initializing BrowserMcpServer with ${wsdlDefinitions.length} WSDL definitions, ${xsdSchemas.length} XSD schemas`);
       const s = new BrowserMcpServer(wsdlDefinitions, xsdSchemas);
+      s.onSessionChange = () => setSessionStatus(s.getSessionStatus());
       setServer(s);
+      setSessionStatus('disconnected');
     } else {
       console.log(`[TryItOutStep] No WSDL definitions available`);
       setServer(null);
+      setSessionStatus('disconnected');
     }
   }, [wsdlDefinitions, xsdSchemas]);
 
-  // Apply endpoint override from Configure step (replaces IP-based URLs from WSDL)
+  // Apply endpoint override — saved soapEndpoint takes priority over config.baseUrl
   useEffect(() => {
     if (!server) return;
-    server.setEndpointOverride(config.baseUrl || null);
-  }, [server, config.baseUrl]);
+    server.setEndpointOverride(soapEndpoint || config.baseUrl || null);
+  }, [server, soapEndpoint, config.baseUrl]);
 
   // Apply SOAP version override from Configure step
   useEffect(() => {
@@ -84,7 +94,7 @@ export function TryItOutStep() {
     if (!server || config.authType !== 'session' || !config.sessionConfig) return;
     const sessionCfg: PlaygroundSessionConfig = {
       loginOperation: config.sessionConfig.loginOperation,
-      sessionHeaderNamespace: config.sessionConfig.sessionHeaderNamespace,
+      sessionHeaderNamespace: sessionHeaderNs || config.sessionConfig.sessionHeaderNamespace,
       loginEndpoint: sessionLoginEndpoint || undefined,
     };
     const creds: PlaygroundSessionCredentials = {
@@ -93,7 +103,7 @@ export function TryItOutStep() {
       loginType: sessionLoginType,
     };
     server.setSessionConfig(sessionCfg, creds);
-  }, [server, config, sessionUserId, sessionPassword, sessionLoginType, sessionLoginEndpoint]);
+  }, [server, config, sessionUserId, sessionPassword, sessionLoginType, sessionLoginEndpoint, sessionHeaderNs]);
 
   // Get tools list for display
   const { tools, warnings } = useMemo(() => {
@@ -241,17 +251,73 @@ export function TryItOutStep() {
         </div>
       )}
 
+      {/* Connection Settings (always visible, persisted) */}
+      <div className="config-panel" style={{ marginBottom: '0' }}>
+        <details open={!!soapEndpoint || !!sessionLoginEndpoint || !!sessionHeaderNs}>
+          <summary style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '15px' }}>
+            Connection Settings
+            {(soapEndpoint || sessionLoginEndpoint) && <span className="tools-count-badge" style={{ background: 'var(--success, #22c55e)' }}>saved</span>}
+          </summary>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            These settings are saved in your browser and persist across sessions.
+          </p>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>SOAP Endpoint URL:</label>
+            <input
+              type="text"
+              value={soapEndpoint}
+              onChange={e => setSoapEndpoint(e.target.value)}
+              style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+              placeholder={config.baseUrl || 'https://api.example.com/soap'}
+            />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Overrides the endpoint from the WSDL and Configure step
+            </span>
+          </div>
+          {config.authType === 'session' && (
+            <>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Auth Endpoint <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>(if different from service endpoint)</span>:
+                </label>
+                <input
+                  type="text"
+                  value={sessionLoginEndpoint}
+                  onChange={e => setSessionLoginEndpoint(e.target.value)}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                  placeholder={soapEndpoint || config.baseUrl || 'https://...'}
+                />
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>Session Header Namespace:</label>
+                <input
+                  type="text"
+                  value={sessionHeaderNs}
+                  onChange={e => setSessionHeaderNs(e.target.value)}
+                  style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                  placeholder={config.sessionConfig?.sessionHeaderNamespace || 'http://example.com/session'}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Namespace for the session SOAP header block
+                </span>
+              </div>
+            </>
+          )}
+        </details>
+      </div>
+
       {/* Session Credentials (shown only when session auth is configured) */}
       {config.authType === 'session' && config.sessionConfig && (
         <div className="config-panel" style={{ marginBottom: '0' }}>
           <details open>
             <summary style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '15px' }}>
               Session Credentials
-              {sessionUserId && <span className="tools-count-badge" style={{ background: 'var(--success, #22c55e)' }}>configured</span>}
+              <span className={`session-status-badge session-status-badge--${sessionStatus}`}>
+                {sessionStatus === 'connected' ? 'Connected' : sessionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+              </span>
             </summary>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-              Login operation: <code>{config.sessionConfig.loginOperation}</code> &nbsp;|&nbsp;
-              Namespace: <code>{config.sessionConfig.sessionHeaderNamespace}</code>
+              Login operation: <code>{config.sessionConfig.loginOperation}</code>
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>
@@ -288,25 +354,13 @@ export function TryItOutStep() {
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                 <button
-                  onClick={() => server?.clearSession()}
+                  onClick={() => { server?.clearSession(); setSessionStatus('disconnected'); }}
                   style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}
                   title="Force a fresh login on the next tool call"
                 >
                   Reset Session
                 </button>
               </div>
-            </div>
-            <div style={{ marginTop: '10px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
-                Login Endpoint <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>(if different from service endpoint)</span>:
-              </label>
-              <input
-                type="text"
-                value={sessionLoginEndpoint}
-                onChange={e => setSessionLoginEndpoint(e.target.value)}
-                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
-                placeholder={config.baseUrl || 'https://...'}
-              />
             </div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
               Login happens automatically before the first tool call. Click "Reset Session" to force re-login.
