@@ -60,6 +60,7 @@ export class BrowserMcpServer {
   private elementNamespaceCache = new Map<string, string>();
   private endpointOverride: string | null = null;
   private soapVersionOverride: '1.1' | '1.2' | null = null;
+  private namespaceOverrides: Map<string, string> = new Map();
 
   constructor(
     wsdlDefinitions: WsdlDefinition[],
@@ -86,6 +87,29 @@ export class BrowserMcpServer {
   /** Override SOAP version for all tools (overrides auto-detected version). */
   setSoapVersionOverride(version: '1.1' | '1.2' | null): void {
     this.soapVersionOverride = version;
+  }
+
+  /** Set namespace overrides (original URI → replacement URI). */
+  setNamespaceOverrides(overrides: Record<string, string>): void {
+    this.namespaceOverrides = new Map(Object.entries(overrides));
+  }
+
+  /** Apply namespace overrides — returns the override if one exists, otherwise the original. */
+  private resolveNamespace(ns: string): string {
+    return this.namespaceOverrides.get(ns) || ns;
+  }
+
+  /** Get all unique namespaces discovered from WSDL definitions and XSD schemas. */
+  getDiscoveredNamespaces(): { wsdlNamespaces: string[]; elementNamespaces: string[] } {
+    const wsdlNs = new Set<string>();
+    for (const def of this.wsdlDefinitions) {
+      if (def.targetNamespace) wsdlNs.add(def.targetNamespace);
+    }
+    const elementNs = new Set<string>(this.elementNamespaceCache.values());
+    return {
+      wsdlNamespaces: Array.from(wsdlNs),
+      elementNamespaces: Array.from(elementNs).filter(ns => !wsdlNs.has(ns)),
+    };
   }
 
   /** Find the targetNamespace of the XSD schema that defines a given element (by local name). */
@@ -391,6 +415,9 @@ export class BrowserMcpServer {
         namespace = this.getElementNamespace(rootName) ?? targetNamespace;
       }
     }
+
+    // Apply namespace override
+    namespace = this.resolveNamespace(namespace);
 
     const soapBody = jsonToXml(args, rootName, namespace);
 
