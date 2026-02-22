@@ -24,6 +24,7 @@ import { generateToolFileTs } from './templates/tool-file-ts';
 import { generateToolRegistryTs } from './templates/tool-registry-ts';
 import { generateEnvExample } from './templates/env-example';
 import { generateReadmeMd } from './templates/readme-md';
+import { generateSchemaUtilsTs } from './templates/schema-utils-ts';
 
 export function generateProject(
   wsdlDefinitions: WsdlDefinition[],
@@ -47,6 +48,7 @@ export function generateProject(
   // Utils (always the same pattern)
   files.push({ path: 'src/utils/error-handler.ts', content: generateErrorHandlerTs() });
   files.push({ path: 'src/utils/xml-to-json.ts', content: generateXmlToJsonTs() });
+  files.push({ path: 'src/utils/schema-utils.ts', content: generateSchemaUtilsTs() });
 
   // Config
   files.push({ path: 'src/config.ts', content: generateConfigTs(config) });
@@ -146,12 +148,18 @@ function buildServiceInfos(
     }
   }
 
-  // Deduplicate services with same name
+  // Deduplicate services with same name, merging operations without duplicating by name
   const seen = new Map<string, ServiceClientInfo>();
   for (const svc of services) {
     const existing = seen.get(svc.serviceName);
     if (existing) {
-      existing.operations.push(...svc.operations);
+      const existingNames = new Set(existing.operations.map(o => o.name));
+      for (const op of svc.operations) {
+        if (!existingNames.has(op.name)) {
+          existing.operations.push(op);
+          existingNames.add(op.name);
+        }
+      }
     } else {
       seen.set(svc.serviceName, svc);
     }

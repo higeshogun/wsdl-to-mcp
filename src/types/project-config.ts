@@ -26,7 +26,7 @@ export function defaultConfig(): ProjectConfig {
     projectName: 'mcp-soap-server',
     projectDescription: 'Auto-generated MCP server for SOAP web services',
     toolPrefix: 'api',
-    baseUrl: 'https://example.com/soap',
+    baseUrl: '',
     authType: 'none',
     envVars: [
       { name: 'BASE_URL', description: 'SOAP service base URL', required: true, defaultValue: '' },
