@@ -843,6 +843,22 @@ body {
   margin: 4px 0;
 }
 
+/* Markdown rendering inside assistant messages */
+.message-text p { margin: 0 0 8px 0; }
+.message-text p:last-child { margin-bottom: 0; }
+.message-text ul, .message-text ol { margin: 4px 0 8px 16px; padding: 0; }
+.message-text li { margin-bottom: 2px; }
+.message-text h1, .message-text h2, .message-text h3 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
+.message-text code { background: rgba(0,0,0,0.2); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+.message-text pre { background: rgba(0,0,0,0.25); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+.message-text pre code { background: none; padding: 0; }
+
+/* Markdown tables */
+.message-text table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 0.9em; }
+.message-text th, .message-text td { border: 1px solid rgba(255,255,255,0.2); padding: 6px 10px; text-align: left; }
+.message-text th { background: rgba(0,0,0,0.2); font-weight: 600; }
+.message-text tr:nth-child(even) { background: rgba(0,0,0,0.1); }
+
 .tool-use, .tool-result {
   margin-top: 8px;
   padding: 8px;
@@ -1027,4 +1043,146 @@ body {
 
 .tool-param-type {
   color: var(--text-muted);
+}
+
+/* SOAP Traffic Panel */
+.soap-traffic-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+}
+
+.soap-traffic-panel > summary {
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.soap-traffic-panel > summary:hover {
+  color: var(--text);
+}
+
+.soap-traffic-panel[open] > summary {
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.soap-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  background: var(--primary);
+  color: white;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.soap-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.soap-log-entry {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.soap-log-entry--error {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.soap-log-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.soap-log-tool {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--primary-hover);
+}
+
+.soap-log-timestamp {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.soap-log-error-badge {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--error);
+  border-radius: 4px;
+}
+
+.soap-log-sub {
+  border-bottom: 1px solid var(--border);
+}
+
+.soap-log-sub:last-child {
+  border-bottom: none;
+}
+
+.soap-log-sub > summary {
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.soap-log-sub > summary:hover {
+  color: var(--text);
+}
+
+.soap-log-sub[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.soap-copy-btn {
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.soap-copy-btn:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+.soap-xml {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg);
+  max-height: 300px;
+  overflow: auto;
+  user-select: text;
+  cursor: text;
 }

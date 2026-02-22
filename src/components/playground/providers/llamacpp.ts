@@ -2,6 +2,7 @@ import type {
   LLMProvider, ProviderConfig, ModelOption, ToolDefinition,
   NormalizedMessage, SendMessageResult, ContentBlock,
 } from './types';
+import { sanitizeSchema } from './schema-utils';
 
 const DEFAULT_BASE_URL = import.meta.env.VITE_DEFAULT_LLM_BASE_URL || 'http://localhost:8080';
 
@@ -57,11 +58,11 @@ export const llamacppProvider: LLMProvider = {
       function: {
         name: t.name,
         description: t.description,
-        parameters: {
+        parameters: sanitizeSchema({
           type: 'object',
           properties: t.inputSchema.properties,
           required: t.inputSchema.required,
-        },
+        }),
       },
     }));
 

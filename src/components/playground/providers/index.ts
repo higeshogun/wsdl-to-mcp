@@ -4,20 +4,48 @@ import { ollamaProvider } from './ollama';
 import { geminiProvider } from './gemini';
 import { llamacppProvider } from './llamacpp';
 import { openaiProvider } from './openai';
+import { sanitizeSchema } from './schema-utils';
+
+function withSanitizer(provider: LLMProvider): LLMProvider {
+  return {
+    ...provider,
+    sendMessage: (messages, tools, config) => {
+      const sanitizedTools = tools.map((tool) => ({
+        ...tool,
+        inputSchema: sanitizeSchema(tool.inputSchema),
+      }));
+      return provider.sendMessage(messages, sanitizedTools, config);
+    },
+    ...(provider.getSystemPrompt
+      ? {
+          getSystemPrompt: (tools) => {
+            const sanitizedTools = tools.map((tool) => ({
+              ...tool,
+              inputSchema: sanitizeSchema(tool.inputSchema),
+            }));
+            return provider.getSystemPrompt!(sanitizedTools);
+          },
+        }
+      : {}),
+  };
+}
+
+const sanitizedOllama = withSanitizer(ollamaProvider);
+const sanitizedLlamacpp = withSanitizer(llamacppProvider);
 
 export const providers: Record<ProviderType, LLMProvider> = {
   anthropic: anthropicProvider,
-  ollama: ollamaProvider,
+  ollama: sanitizedOllama,
   gemini: geminiProvider,
-  llamacpp: llamacppProvider,
+  llamacpp: sanitizedLlamacpp,
   openai: openaiProvider,
 };
 
 export const providerList: LLMProvider[] = [
-  llamacppProvider,
+  sanitizedLlamacpp,
   openaiProvider,
   anthropicProvider,
-  ollamaProvider,
+  sanitizedOllama,
   geminiProvider,
 ];
 

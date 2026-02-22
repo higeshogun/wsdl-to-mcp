@@ -48,7 +48,7 @@ function buildXmlContent(obj: any): string {
   return xml;
 }
 
-function escapeXml(unsafe: string): string {
+export function escapeXml(unsafe: string): string {
   return unsafe.replace(/[<>&'"]/g, function (c) {
     switch (c) {
       case '<': return '&lt;';
