@@ -92,7 +92,7 @@ function typeRefToJsonSchema(element: XsdElement, registry: TypeRegistry): JsonS
     const st = registry.resolveSimpleType(localType);
     if (st) return simpleTypeToJsonSchema(st);
 
-    return {}; // Unknown type
+    return { type: 'string' }; // Unknown type — fallback to string
   }
 
   return { type: 'string' };
