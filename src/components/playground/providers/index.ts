@@ -4,6 +4,7 @@ import { ollamaProvider } from './ollama';
 import { geminiProvider } from './gemini';
 import { llamacppProvider } from './llamacpp';
 import { openaiProvider } from './openai';
+import { nvidiaProvider } from './nvidia';
 import { sanitizeSchema } from './schema-utils';
 
 function withSanitizer(provider: LLMProvider): LLMProvider {
@@ -32,6 +33,7 @@ function withSanitizer(provider: LLMProvider): LLMProvider {
 
 const sanitizedOllama = withSanitizer(ollamaProvider);
 const sanitizedLlamacpp = withSanitizer(llamacppProvider);
+const sanitizedNvidia = withSanitizer(nvidiaProvider);
 
 export const providers: Record<ProviderType, LLMProvider> = {
   anthropic: anthropicProvider,
@@ -39,11 +41,13 @@ export const providers: Record<ProviderType, LLMProvider> = {
   gemini: geminiProvider,
   llamacpp: sanitizedLlamacpp,
   openai: openaiProvider,
+  nvidia: sanitizedNvidia,
 };
 
 export const providerList: LLMProvider[] = [
   sanitizedLlamacpp,
   openaiProvider,
+  sanitizedNvidia,
   anthropicProvider,
   sanitizedOllama,
   geminiProvider,

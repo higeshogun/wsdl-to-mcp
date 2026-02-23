@@ -67,6 +67,7 @@ export const geminiProvider: LLMProvider = {
       body: JSON.stringify({
         contents: geminiContents,
         tools: geminiTools,
+        ...(config.maxTokens ? { generationConfig: { maxOutputTokens: config.maxTokens } } : {}),
       }),
     });
 

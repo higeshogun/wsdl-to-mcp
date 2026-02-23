@@ -16,6 +16,8 @@ interface ChatbotProps {
   hiddenToolNames?: Set<string>;
   /** Per-tool input schema overrides (tool name -> schema) */
   schemaOverrides?: Record<string, any>;
+  maxTokens?: number;
+  contextWindow?: number;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -35,7 +37,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hiddenToolNames, schemaOverrides }: ChatbotProps) {
+export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hiddenToolNames, schemaOverrides, maxTokens, contextWindow }: ChatbotProps) {
   const [messages, setMessages] = useState<NormalizedMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -99,7 +101,7 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
 
     // 2. Call LLM via provider
     const p = getProvider(provider);
-    const config: ProviderConfig = { apiKey, proxyUrl, baseUrl, model };
+    const config: ProviderConfig = { apiKey, proxyUrl, baseUrl, model, maxTokens, contextWindow };
     const result = await p.sendMessage(currentMessages, tools, config);
 
     console.log(`[Chatbot] Response from ${provider}:`, JSON.stringify(result, null, 2));

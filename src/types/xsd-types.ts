@@ -1,8 +1,11 @@
 export interface XsdSchema {
   targetNamespace: string;
+  elementFormDefault: 'qualified' | 'unqualified';
   elements: Map<string, XsdElement>;
   complexTypes: Map<string, XsdComplexType>;
   simpleTypes: Map<string, XsdSimpleType>;
+  /** Top-level global attribute declarations (local name → attribute) */
+  globalAttributes: Map<string, XsdAttribute>;
 }
 
 export interface XsdElement {
@@ -46,4 +49,6 @@ export interface XsdAttribute {
   defaultValue?: string;
   ref?: string;
   simpleType?: XsdSimpleType;
+  /** Namespace URI of the ref's prefix (e.g. for ref="cq:dslRef", this is the URI of cq) */
+  refNsUri?: string;
 }

@@ -1,10 +1,11 @@
-import type { XsdSchema, XsdElement, XsdComplexType, XsdSimpleType } from '../types/xsd-types';
+import type { XsdSchema, XsdElement, XsdComplexType, XsdSimpleType, XsdAttribute } from '../types/xsd-types';
 import { getLocalName } from './xml-parser';
 
 export class TypeRegistry {
   private elements = new Map<string, XsdElement>();
   private complexTypes = new Map<string, XsdComplexType>();
   private simpleTypes = new Map<string, XsdSimpleType>();
+  private globalAttributes = new Map<string, XsdAttribute>();
 
   addSchema(schema: XsdSchema): void {
     for (const [name, el] of schema.elements) {
@@ -15,6 +16,11 @@ export class TypeRegistry {
     }
     for (const [name, st] of schema.simpleTypes) {
       this.simpleTypes.set(name, st);
+    }
+    if (schema.globalAttributes) {
+      for (const [name, attr] of schema.globalAttributes) {
+        this.globalAttributes.set(name, attr);
+      }
     }
   }
 
@@ -31,6 +37,11 @@ export class TypeRegistry {
   resolveSimpleType(qualifiedName: string): XsdSimpleType | undefined {
     const local = getLocalName(qualifiedName);
     return this.simpleTypes.get(local);
+  }
+
+  resolveGlobalAttribute(qualifiedName: string): XsdAttribute | undefined {
+    const local = getLocalName(qualifiedName);
+    return this.globalAttributes.get(local);
   }
 
   resolveType(qualifiedName: string): XsdComplexType | XsdSimpleType | undefined {

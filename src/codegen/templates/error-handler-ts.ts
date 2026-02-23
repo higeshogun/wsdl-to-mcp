@@ -24,21 +24,38 @@ function extractFault(error: unknown): SoapFaultDetail | null {
     const envelope = root.Envelope as Record<string, unknown>;
     const body = envelope.Body as Record<string, unknown>;
     const fault = body.Fault as Record<string, unknown>;
-    const detail = fault.detail as Record<string, unknown>;
 
-    if (!detail) return null;
+    // SOAP 1.1 uses lowercase 'detail', SOAP 1.2 uses 'Detail' (capital D)
+    const detail = (fault.detail || fault.Detail) as Record<string, unknown> | undefined;
 
-    for (const key of Object.keys(detail)) {
-      if (key.startsWith('$')) continue;
-      const faultData = detail[key] as Record<string, unknown>;
+    // Extract fault code/reason — SOAP 1.1: faultcode/faultstring, SOAP 1.2: Code/Reason
+    const faultCode = fault.faultcode ?? fault.Code;
+    const faultString = fault.faultstring ?? fault.Reason;
+
+    if (detail) {
+      for (const key of Object.keys(detail)) {
+        if (key.startsWith('$')) continue;
+        const faultData = detail[key] as Record<string, unknown>;
+        return {
+          type: key,
+          errorType: faultData.errorType ? String(faultData.errorType) : undefined,
+          errorMessage: faultData.errorMessage ? String(faultData.errorMessage) : undefined,
+          rejectReason: faultData.rejectReason ? String(faultData.rejectReason) : undefined,
+          detail: faultData,
+        };
+      }
+    }
+
+    // If no structured detail, return code/reason if available
+    if (faultCode || faultString) {
       return {
-        type: key,
-        errorType: faultData.errorType ? String(faultData.errorType) : undefined,
-        errorMessage: faultData.errorMessage ? String(faultData.errorMessage) : undefined,
-        rejectReason: faultData.rejectReason ? String(faultData.rejectReason) : undefined,
-        detail: faultData,
+        type: 'SoapFault',
+        errorMessage: faultString ? String(typeof faultString === 'object' ? (faultString as any).Text || JSON.stringify(faultString) : faultString) : undefined,
+        errorType: faultCode ? String(typeof faultCode === 'object' ? (faultCode as any).Value || JSON.stringify(faultCode) : faultCode) : undefined,
+        detail: fault,
       };
     }
+
     return null;
   } catch {
     return null;
