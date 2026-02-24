@@ -8,6 +8,7 @@ import { IndexedDBStorage } from './IndexedDBStorage';
 import { WORKER_SCRIPT } from '../common/cors-proxy-worker';
 import { getProvider, providerList } from './providers/index';
 import type { ProviderType, ProviderConfig, ModelOption } from './providers/types';
+import { isWebMCPAvailable, registerSOAPToolsWithWebMCP, clearWebMCPContext } from '../../ai/webmcp';
 
 const storage = new IndexedDBStorage();
 
@@ -22,7 +23,7 @@ interface ProviderSettings {
 }
 
 export function TryItOutStep() {
-  const { wsdlDefinitions, xsdSchemas, config } = useProjectStore();
+  const { wsdlDefinitions, xsdSchemas, config, enhancedDescriptions } = useProjectStore();
   const [provider, setProvider] = useState<ProviderType>((import.meta.env.VITE_DEFAULT_PROVIDER as ProviderType) || 'ollama');
   const [apiKey, setApiKey] = useState('');
   const [proxyUrl, setProxyUrl] = useState(import.meta.env.VITE_DEFAULT_PROXY_URL || '');
@@ -52,8 +53,14 @@ export function TryItOutStep() {
   const [maxTokens, setMaxTokens] = useState('');
   const [contextWindow, setContextWindow] = useState('');
 
+  const [webMCPRegistered, setWebMCPRegistered] = useState(false);
+
   // Guard: don't persist until initial load from storage is done
   const loadedRef = useRef(false);
+
+  // Keep latest proxyUrl in a ref so WebMCP execute closures always use the current value
+  const proxyUrlRef = useRef(proxyUrl);
+  proxyUrlRef.current = proxyUrl;
 
   // Per-provider settings map — always read/written via ref to avoid stale closures
   const providerConfigsRef = useRef<Record<string, ProviderSettings>>({});
@@ -142,7 +149,7 @@ export function TryItOutStep() {
   useEffect(() => {
     if (wsdlDefinitions.length > 0) {
       console.log(`[TryItOutStep] Initializing BrowserMcpServer with ${wsdlDefinitions.length} WSDL definitions, ${xsdSchemas.length} XSD schemas`);
-      const s = new BrowserMcpServer(wsdlDefinitions, xsdSchemas);
+      const s = new BrowserMcpServer(wsdlDefinitions, xsdSchemas, enhancedDescriptions);
       s.onSessionChange = () => setSessionStatus(s.getSessionStatus());
       setServer(s);
       setSessionStatus('disconnected');
@@ -151,7 +158,7 @@ export function TryItOutStep() {
       setServer(null);
       setSessionStatus('disconnected');
     }
-  }, [wsdlDefinitions, xsdSchemas]);
+  }, [wsdlDefinitions, xsdSchemas, enhancedDescriptions]);
 
   // Apply endpoint override — saved soapEndpoint takes priority over config.baseUrl
   useEffect(() => {
@@ -176,6 +183,27 @@ export function TryItOutStep() {
     if (!server) return;
     server.setToolNamespaceConfig(toolNsConfig);
   }, [server, toolNsConfig]);
+
+  // Register SOAP tools with WebMCP so any in-browser AI agent can discover and call them
+  useEffect(() => {
+    if (!server || !isWebMCPAvailable()) {
+      setWebMCPRegistered(false);
+      return;
+    }
+
+    const tools = server.getTools().tools;
+    registerSOAPToolsWithWebMCP(
+      tools,
+      (name, args) => server.callTool(name, args, proxyUrlRef.current),
+      () => proxyUrlRef.current,
+    );
+    setWebMCPRegistered(true);
+
+    return () => {
+      clearWebMCPContext();
+      setWebMCPRegistered(false);
+    };
+  }, [server]);
 
   // Wire session config into server whenever server or credentials change
   useEffect(() => {
@@ -393,7 +421,37 @@ export function TryItOutStep() {
                 {Object.keys(schemaOverrides).length} overridden
               </span>
             )}
+            {webMCPRegistered && (
+              <span className="webmcp-badge" title="Tools registered with navigator.modelContext — discoverable by any WebMCP-compatible in-browser agent">
+                WebMCP
+              </span>
+            )}
           </summary>
+
+          {webMCPRegistered && (
+            <p className={`webmcp-info${!proxyUrl ? ' webmcp-info--warn' : ''}`}>
+              {proxyUrl ? (
+                <>
+                  {effectiveTools.length} tool{effectiveTools.length !== 1 ? 's' : ''} registered with{' '}
+                  <code>navigator.modelContext</code>. Install the{' '}
+                  <a
+                    href="https://googlechromelabs.github.io/webmcp-tools/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Model Context Tool Inspector
+                  </a>{' '}
+                  extension to discover and invoke them, or use any WebMCP-compatible agent.
+                </>
+              ) : (
+                <>
+                  ⚠ {effectiveTools.length} tool{effectiveTools.length !== 1 ? 's' : ''} registered with{' '}
+                  <code>navigator.modelContext</code>, but no CORS proxy is configured — tool calls will fail.
+                  Set a proxy URL in Connection Settings.
+                </>
+              )}
+            </p>
+          )}
 
           {effectiveTools.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>

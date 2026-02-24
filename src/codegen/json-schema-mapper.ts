@@ -46,6 +46,9 @@ const XSD_PRIMITIVE_MAP: Record<string, Partial<JsonSchema>> = {
   unsignedShort: { type: 'integer', minimum: 0 },
   base64Binary: { type: 'string', contentEncoding: 'base64' } as any,
   hexBinary: { type: 'string' },
+  // XSD wildcard types — accept any simple value including empty string
+  anySimpleType: { type: 'string', default: '' },
+  anyType: { type: 'string', default: '' },
 };
 
 export function elementToJsonSchema(element: XsdElement, registry: TypeRegistry): JsonSchema {
@@ -198,7 +201,7 @@ export function simpleTypeToJsonSchema(st: XsdSimpleType): JsonSchema {
   const r = st.restriction;
 
   if (r.enumerations.length > 0) {
-    return { enum: r.enumerations };
+    return { type: 'string', enum: r.enumerations };
   }
 
   const baseLocalName = getLocalName(r.base);

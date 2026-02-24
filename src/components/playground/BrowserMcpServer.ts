@@ -74,12 +74,15 @@ export class BrowserMcpServer {
   private soapVersionOverride: '1.1' | '1.2' | null = null;
   private namespaceOverrides: Map<string, string> = new Map();
   private toolNamespaceConfig: Map<string, ToolNamespaceConfig> = new Map();
+  private enhancedDescriptions: Record<string, string> = {};
 
   constructor(
     wsdlDefinitions: WsdlDefinition[],
-    xsdSchemas: XsdSchema[]
+    xsdSchemas: XsdSchema[],
+    enhancedDescriptions: Record<string, string> = {},
   ) {
     this.wsdlDefinitions = wsdlDefinitions;
+    this.enhancedDescriptions = enhancedDescriptions;
     this.registry = new TypeRegistry();
     xsdSchemas.forEach(s => {
       this.registry.addSchema(s);
@@ -288,10 +291,11 @@ export class BrowserMcpServer {
                 required: elSchema.required || []
               };
             } else {
+              const isOptional = el.minOccurs === 0 || elSchema.default !== undefined;
               inputSchema = {
                 type: 'object',
                 properties: { [part.name]: elSchema },
-                required: [part.name]
+                ...(isOptional ? {} : { required: [part.name] }),
               };
             }
           }
@@ -374,7 +378,7 @@ export class BrowserMcpServer {
 
                 let toolName = operationToToolName(service.name, op.name);
                 toolName = ensureUniqueName(toolName);
-                const desc = op.documentation || operationToDescription(op.name);
+                const desc = this.enhancedDescriptions[toolName] || op.documentation || operationToDescription(op.name);
 
                 const { inputMessage, inputSchema } = buildInputSchema(op, def.messages);
 
@@ -419,7 +423,7 @@ export class BrowserMcpServer {
 
           let toolName = operationToToolName(portType.name, op.name);
           toolName = ensureUniqueName(toolName);
-          const desc = op.documentation || operationToDescription(op.name);
+          const desc = this.enhancedDescriptions[toolName] || op.documentation || operationToDescription(op.name);
 
           const { inputMessage, inputSchema } = buildInputSchema(op, def.messages);
 

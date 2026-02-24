@@ -48,7 +48,7 @@ export const geminiProvider: LLMProvider = {
     const geminiTools = tools.length > 0 ? [{
       functionDeclarations: tools.map(t => ({
         name: t.name,
-        description: t.description,
+        description: t.description || t.name,
         parameters: {
           type: 'OBJECT',
           properties: convertPropertiesToGemini(t.inputSchema.properties),
@@ -137,6 +137,7 @@ function convertPropertiesToGemini(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(properties)) {
+    if (!key) continue;
     result[key] = convertSchemaToGemini(value as Record<string, any>);
   }
   return result;

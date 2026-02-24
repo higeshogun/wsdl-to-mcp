@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { BrowserMcpServer, SoapTrafficEntry } from './BrowserMcpServer';
 import type { NormalizedMessage, ProviderConfig, ToolDefinition, ProviderType } from './providers/types';
 import { getProvider } from './providers/index';
+import { getChromeAIAvailability, isPromptApiUsable, explainSoapError } from '../../ai/chrome-ai';
 
 interface ChatbotProps {
   provider: ProviderType;
@@ -45,11 +46,20 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
   const [soapLog, setSoapLog] = useState<SoapTrafficEntry[]>([]);
   const [dryRun, setDryRun] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [chromeAIReady, setChromeAIReady] = useState(false);
+  // Map of entry id → explanation text (or 'loading')
+  const [explanations, setExplanations] = useState<Record<number, string>>({});
 
   useEffect(() => {
     server.onSoapTraffic = (entry) => setSoapLog(prev => [...prev, entry]);
     return () => { server.onSoapTraffic = undefined; };
   }, [server]);
+
+  useEffect(() => {
+    getChromeAIAvailability()
+      .then(avail => setChromeAIReady(isPromptApiUsable(avail)))
+      .catch(() => {});
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -281,7 +291,28 @@ export function Chatbot({ provider, apiKey, proxyUrl, baseUrl, model, server, hi
                 <code className="soap-log-tool">{entry.toolName}</code>
                 <span className="soap-log-timestamp">{entry.timestamp.toLocaleTimeString()}</span>
                 {entry.isError && <span className="soap-log-error-badge">Error</span>}
+                {entry.isError && chromeAIReady && !explanations[entry.id] && (
+                  <button
+                    className="soap-explain-btn"
+                    onClick={() => {
+                      setExplanations(prev => ({ ...prev, [entry.id]: 'loading' }));
+                      explainSoapError(entry.toolName, entry.response)
+                        .then(text => setExplanations(prev => ({ ...prev, [entry.id]: text })))
+                        .catch(() => setExplanations(prev => ({ ...prev, [entry.id]: 'Could not explain error.' })));
+                    }}
+                  >
+                    Explain
+                  </button>
+                )}
               </div>
+              {explanations[entry.id] && (
+                <div className="soap-explanation">
+                  {explanations[entry.id] === 'loading'
+                    ? <span className="soap-explanation-loading">Analyzing error…</span>
+                    : explanations[entry.id]
+                  }
+                </div>
+              )}
               <details className="soap-log-sub">
                 <summary><span>Request</span><CopyButton text={entry.request} /></summary>
                 <pre className="soap-xml">{entry.request}</pre>

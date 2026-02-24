@@ -34,13 +34,14 @@ export function generateProject(
   wsdlDefinitions: WsdlDefinition[],
   xsdSchemas: XsdSchema[],
   config: ProjectConfig,
+  enhancedDescriptions: Record<string, string> = {},
 ): GeneratedFile[] {
   const registry = new TypeRegistry();
   for (const schema of xsdSchemas) {
     registry.addSchema(schema);
   }
 
-  const services = buildServiceInfos(wsdlDefinitions, config, registry);
+  const services = buildServiceInfos(wsdlDefinitions, config, registry, enhancedDescriptions);
   const files: GeneratedFile[] = [];
 
   // Static config files
@@ -122,6 +123,7 @@ function buildServiceInfos(
   wsdlDefinitions: WsdlDefinition[],
   config: ProjectConfig,
   _registry: TypeRegistry,
+  enhancedDescriptions: Record<string, string> = {},
 ): ServiceClientInfo[] {
   const services: ServiceClientInfo[] = [];
 
@@ -162,11 +164,12 @@ function buildServiceInfos(
       const operations: OperationInfo[] = pt.operations.map(op => {
         const inputMsgName = getLocalName(op.inputMessage);
         const inputElementName = messageElements.get(inputMsgName);
+        const toolName = operationToToolName(config.toolPrefix, op.name);
 
         return {
           name: op.name,
-          toolName: operationToToolName(config.toolPrefix, op.name),
-          description: op.documentation || operationToDescription(op.name),
+          toolName,
+          description: enhancedDescriptions[toolName] || op.documentation || operationToDescription(op.name),
           inputElementName,
           serviceName,
           clientKey,
