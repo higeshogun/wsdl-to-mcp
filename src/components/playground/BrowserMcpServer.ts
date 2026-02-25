@@ -45,6 +45,14 @@ export interface ToolNamespaceConfig {
   additionalNamespaces?: Record<string, string>;
 }
 
+/** Minimal interface required by Chatbot — satisfied by both BrowserMcpServer and MultiServerRouter */
+export interface PlaygroundServer {
+  getTools(): { tools: Tool[]; warnings: string[] };
+  callTool(name: string, args: any, proxyUrl: string, skipSession?: boolean): Promise<string>;
+  buildEnvelope(name: string, args: any): string;
+  onSoapTraffic?: ((entry: SoapTrafficEntry) => void) | undefined;
+}
+
 interface ToolInfo {
   op: WsdlOperation;
   serviceName: string;

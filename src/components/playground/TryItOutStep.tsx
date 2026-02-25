@@ -9,8 +9,31 @@ import { WORKER_SCRIPT } from '../common/cors-proxy-worker';
 import { getProvider, providerList } from './providers/index';
 import type { ProviderType, ProviderConfig, ModelOption } from './providers/types';
 import { isWebMCPAvailable, registerSOAPToolsWithWebMCP, clearWebMCPContext } from '../../ai/webmcp';
+import { parseAllFiles } from '../../parser/schema-resolver';
+import { MultiServerRouter } from './MultiServerRouter';
+import type { RouterServerEntry } from './MultiServerRouter';
 
 const storage = new IndexedDBStorage();
+
+interface AdditionalServerEntry {
+  id: string;
+  label: string;
+  endpoint: string;
+  server: BrowserMcpServer;
+  toolCount: number;
+  parseErrors: string[];
+}
+
+interface PersistedAdditionalServer {
+  id: string;
+  label: string;
+  endpoint: string;
+  files: Record<string, string>;
+}
+
+function sanitizePrefix(label: string): string {
+  return label.replace(/[^a-zA-Z0-9]/g, '_').replace(/^_+|_+$/g, '').slice(0, 20) || 'svc';
+}
 
 interface ProviderSettings {
   apiKey: string;
@@ -55,8 +78,26 @@ export function TryItOutStep() {
 
   const [webMCPRegistered, setWebMCPRegistered] = useState(false);
 
+  // Additional WSDL services
+  const [additionalServers, setAdditionalServers] = useState<AdditionalServerEntry[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newServiceLabel, setNewServiceLabel] = useState('');
+  const [newServiceEndpoint, setNewServiceEndpoint] = useState('');
+  const [addFormError, setAddFormError] = useState<string | null>(null);
+  const addFileInputRef = useRef<HTMLInputElement>(null);
+
   // Guard: don't persist until initial load from storage is done
   const loadedRef = useRef(false);
+
+  // Merged router for Chatbot — wraps primary + additional servers
+  const multiRouter = useMemo(() => {
+    if (!server) return null;
+    const entries: RouterServerEntry[] = [
+      { id: 'primary', prefix: '', server },
+      ...additionalServers.map(s => ({ id: s.id, prefix: sanitizePrefix(s.label), server: s.server })),
+    ];
+    return new MultiServerRouter(entries);
+  }, [server, additionalServers]);
 
   // Keep latest proxyUrl in a ref so WebMCP execute closures always use the current value
   const proxyUrlRef = useRef(proxyUrl);
@@ -119,6 +160,30 @@ export function TryItOutStep() {
       if (savedNsOverrides) setNsOverrides(savedNsOverrides);
       const savedToolNsConfig = await storage.get<Record<string, ToolNamespaceConfig>>('toolNsConfig');
       if (savedToolNsConfig) setToolNsConfig(savedToolNsConfig);
+
+      // Restore additional WSDL services
+      const savedAdditional = await storage.get<PersistedAdditionalServer[]>('additionalServers');
+      if (savedAdditional?.length) {
+        const entries: AdditionalServerEntry[] = [];
+        for (const saved of savedAdditional) {
+          const files = new Map(Object.entries(saved.files));
+          const result = parseAllFiles(files);
+          if (result.wsdlDefinitions.length > 0) {
+            const srv = new BrowserMcpServer(result.wsdlDefinitions, result.xsdSchemas);
+            if (saved.endpoint) srv.setEndpointOverride(saved.endpoint);
+            const { tools } = srv.getTools();
+            entries.push({
+              id: saved.id,
+              label: saved.label,
+              endpoint: saved.endpoint,
+              server: srv,
+              toolCount: tools.length,
+              parseErrors: result.errors,
+            });
+          }
+        }
+        setAdditionalServers(entries);
+      }
 
       // Restore the last-used provider and its settings
       const pType = (savedProvider as ProviderType) || 'ollama';
@@ -186,15 +251,15 @@ export function TryItOutStep() {
 
   // Register SOAP tools with WebMCP so any in-browser AI agent can discover and call them
   useEffect(() => {
-    if (!server || !isWebMCPAvailable()) {
+    if (!multiRouter || !isWebMCPAvailable()) {
       setWebMCPRegistered(false);
       return;
     }
 
-    const tools = server.getTools().tools;
+    const tools = multiRouter.getTools().tools;
     registerSOAPToolsWithWebMCP(
       tools,
-      (name, args) => server.callTool(name, args, proxyUrlRef.current),
+      (name, args) => multiRouter.callTool(name, args, proxyUrlRef.current),
       () => proxyUrlRef.current,
     );
     setWebMCPRegistered(true);
@@ -203,7 +268,7 @@ export function TryItOutStep() {
       clearWebMCPContext();
       setWebMCPRegistered(false);
     };
-  }, [server]);
+  }, [multiRouter]);
 
   // Wire session config into server whenever server or credentials change
   useEffect(() => {
@@ -336,6 +401,51 @@ export function TryItOutStep() {
     });
     if (editingSchema === toolName) setEditingSchema(null);
   }, [editingSchema]);
+
+  // Additional WSDL service handlers
+  const handleAddService = useCallback(async () => {
+    const label = newServiceLabel.trim();
+    if (!label) { setAddFormError('Service label is required.'); return; }
+    if (!addFileInputRef.current?.files?.length) { setAddFormError('Select at least one .wsdl file.'); return; }
+    const files = new Map<string, string>();
+    for (const f of Array.from(addFileInputRef.current.files)) {
+      files.set(f.name, await f.text());
+    }
+    const result = parseAllFiles(files);
+    if (result.wsdlDefinitions.length === 0) { setAddFormError('No WSDL definitions found in uploaded files.'); return; }
+    const srv = new BrowserMcpServer(result.wsdlDefinitions, result.xsdSchemas);
+    const ep = newServiceEndpoint.trim();
+    if (ep) srv.setEndpointOverride(ep);
+    const { tools: srvTools } = srv.getTools();
+    const id = `svc_${Date.now()}`;
+    const entry: AdditionalServerEntry = { id, label, endpoint: ep, server: srv, toolCount: srvTools.length, parseErrors: result.errors };
+    setAdditionalServers(prev => [...prev, entry]);
+    setShowAddForm(false);
+    setNewServiceLabel('');
+    setNewServiceEndpoint('');
+    setAddFormError(null);
+    if (addFileInputRef.current) addFileInputRef.current.value = '';
+    const stored = await storage.get<PersistedAdditionalServer[]>('additionalServers') || [];
+    storage.set('additionalServers', [...stored, { id, label, endpoint: ep, files: Object.fromEntries(files) }]);
+  }, [newServiceLabel, newServiceEndpoint]);
+
+  const removeAdditionalServer = useCallback((id: string) => {
+    setAdditionalServers(prev => prev.filter(s => s.id !== id));
+    storage.get<PersistedAdditionalServer[]>('additionalServers').then(stored =>
+      storage.set('additionalServers', (stored || []).filter(s => s.id !== id))
+    );
+  }, []);
+
+  const updateAdditionalEndpoint = useCallback((id: string, endpoint: string) => {
+    setAdditionalServers(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      s.server.setEndpointOverride(endpoint || null);
+      return { ...s, endpoint };
+    }));
+    storage.get<PersistedAdditionalServer[]>('additionalServers').then(stored =>
+      storage.set('additionalServers', (stored || []).map(s => s.id === id ? { ...s, endpoint } : s))
+    );
+  }, []);
 
   // Tool names to hide from the LLM when session auth is configured (login/logout are auto-managed)
   const hiddenToolNames = useMemo(() => {
@@ -618,6 +728,128 @@ export function TryItOutStep() {
                 </div>
               ))}
             </div>
+          )}
+        </details>
+      </div>
+
+      {/* Additional WSDL Services Panel */}
+      <div className="config-panel" style={{ marginBottom: '0' }}>
+        <details>
+          <summary style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '15px' }}>
+            Additional WSDL Services
+            {additionalServers.length > 0 && (
+              <span className="tools-count-badge">{additionalServers.length}</span>
+            )}
+          </summary>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Add more WSDL services so the LLM can call tools from multiple services in one conversation.
+            Tools from each service are prefixed with the service label.
+          </p>
+
+          {additionalServers.map(srv => (
+            <div key={srv.id} style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div>
+                  <strong>{srv.label}</strong>
+                  <span style={{ marginLeft: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {srv.toolCount} tool{srv.toolCount !== 1 ? 's' : ''} · prefix: <code>{sanitizePrefix(srv.label)}__</code>
+                  </span>
+                </div>
+                <button
+                  className="schema-action-btn schema-action-btn--reset"
+                  onClick={() => removeAdditionalServer(srv.id)}
+                  title="Remove this service"
+                >
+                  Remove
+                </button>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: '3px', color: 'var(--text-muted)' }}>
+                  Endpoint Override:
+                </label>
+                <input
+                  type="text"
+                  value={srv.endpoint}
+                  onChange={e => updateAdditionalEndpoint(srv.id, e.target.value)}
+                  style={{ width: '100%', padding: '6px', boxSizing: 'border-box', fontSize: '0.85rem' }}
+                  placeholder="https://api.example.com/soap"
+                />
+              </div>
+              {srv.parseErrors.length > 0 && (
+                <ul style={{ color: 'var(--error)', fontSize: '0.8rem', margin: '6px 0 0', paddingLeft: '16px' }}>
+                  {srv.parseErrors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+            </div>
+          ))}
+
+          {showAddForm ? (
+            <div style={{ border: '1px dashed var(--border)', borderRadius: '6px', padding: '12px', marginTop: '8px' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '3px' }}>Service Label:</label>
+                <input
+                  type="text"
+                  value={newServiceLabel}
+                  onChange={e => setNewServiceLabel(e.target.value)}
+                  style={{ width: '100%', padding: '6px', boxSizing: 'border-box' }}
+                  placeholder="e.g. PaymentService"
+                  autoFocus
+                />
+                {newServiceLabel && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Tool prefix: <code>{sanitizePrefix(newServiceLabel)}__</code>
+                  </span>
+                )}
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '3px' }}>SOAP Endpoint:</label>
+                <input
+                  type="text"
+                  value={newServiceEndpoint}
+                  onChange={e => setNewServiceEndpoint(e.target.value)}
+                  style={{ width: '100%', padding: '6px', boxSizing: 'border-box' }}
+                  placeholder="https://api.example.com/soap (optional)"
+                />
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '3px' }}>WSDL / XSD Files:</label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".wsdl,.xsd"
+                  ref={addFileInputRef}
+                  style={{ fontSize: '0.85rem' }}
+                />
+              </div>
+              {addFormError && (
+                <p style={{ color: 'var(--error)', fontSize: '0.8rem', margin: '0 0 8px' }}>{addFormError}</p>
+              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                  onClick={handleAddService}
+                  disabled={!newServiceLabel.trim()}
+                >
+                  Add
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                  onClick={() => { setShowAddForm(false); setAddFormError(null); }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="btn-secondary"
+              style={{ marginTop: additionalServers.length > 0 ? '8px' : '0', fontSize: '0.85rem' }}
+              onClick={() => { setShowAddForm(true); setNewServiceLabel(''); setNewServiceEndpoint(''); setAddFormError(null); }}
+            >
+              + Add Service
+            </button>
           )}
         </details>
       </div>
@@ -992,7 +1224,7 @@ export function TryItOutStep() {
           proxyUrl={proxyUrl}
           baseUrl={baseUrl}
           model={model === 'custom' ? customModel : model}
-          server={server!}
+          server={multiRouter!}
           hiddenToolNames={hiddenToolNames}
           schemaOverrides={schemaOverrides}
           maxTokens={maxTokens ? parseInt(maxTokens, 10) : undefined}
