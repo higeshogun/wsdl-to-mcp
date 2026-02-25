@@ -30,6 +30,7 @@ export class SessionManager {
 
   async ensureSession(): Promise<SessionState> {
     if (this.session && !this.isExpired()) {
+      console.error('[session] Reusing cached session for', this.session.userID);
       return this.session;
     }
 
@@ -53,6 +54,7 @@ export class SessionManager {
   }
 
   private async login(): Promise<SessionState> {
+    console.error('[session] Logging in as', this.config.userID, 'via', this.config.loginOperation);
     const args: Record<string, unknown> = {
       userID: this.config.userID,
       password: this.config.password,
@@ -72,6 +74,7 @@ export class SessionManager {
     }
 
     const [result] = await method.call(this.authClient, args);
+    console.error('[session] Session established for', this.config.userID);
 
     return {
       userID: this.config.userID,
@@ -97,11 +100,13 @@ export class SessionManager {
       throw new Error(\`Operation '\${operation}' not found on SOAP client\`);
     }
 
+    console.error('[session] Calling operation:', operation);
     try {
       const [result] = await method.call(client, args);
       return result;
     } catch (error) {
       if (this.isSessionExpiredFault(error)) {
+        console.error('[session] Session expired, refreshing...');
         this.session = null;
         const newSession = await this.ensureSession();
         this.applySessionHeader(client, newSession);
@@ -141,6 +146,7 @@ export class SessionManager {
 
   async logout(): Promise<void> {
     if (!this.session) return;
+    console.error('[session] Logging out user:', this.session.userID);
     try {
       this.applySessionHeader(this.authClient, this.session);
       const logoutMethodName = this.config.logoutOperation + 'Async';

@@ -79,12 +79,14 @@ function buildTool(
     '${escapeStr(op.description)}',
     ${schemaStr},
     async (params) => {
+      console.error('[tool] ${op.toolName} invoked');
       try {
         const result = ${callExpr};
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(normalizeResponse(result), null, 2) }],
         };
       } catch (error) {
+        console.error('[tool] ${op.toolName} error:', error instanceof Error ? error.message : String(error));
         const err = formatSoapError(error);
         return { content: [{ type: 'text' as const, text: err.text }], isError: true };
       }

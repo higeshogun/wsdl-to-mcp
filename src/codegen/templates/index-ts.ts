@@ -77,7 +77,9 @@ ${clientTypeFields}
 
 async function main() {
   const config = loadConfig();
-
+  console.error('[${config.projectName}] Starting...');
+  console.error('[${config.projectName}] BASE_URL:', config.${prefix}_BASE_URL);
+${hasSession ? `  console.error('[${config.projectName}] AUTH_URL:', config.${prefix}_AUTH_URL);` : ''}
   const server = new McpServer({
     name: '${config.projectName}',
     version: '1.0.0',
@@ -86,6 +88,7 @@ async function main() {
   const [${clientDestructure}] = await Promise.all([
 ${clientCreation}
   ]);
+  console.error('[${config.projectName}] SOAP clients initialized');
 
   const clients: Clients = {
 ${clientObjectFields}
@@ -95,6 +98,7 @@ ${sessionSetup}
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  console.error('[${config.projectName}] MCP server ready');
 ${sessionCleanup}
 }
 
