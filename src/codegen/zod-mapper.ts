@@ -134,7 +134,7 @@ function attributeToZod(attr: XsdAttribute, registry: TypeRegistry): string {
   }
 
   if (attr.defaultValue !== undefined) {
-    schema += `.default(${JSON.stringify(attr.defaultValue)})`;
+    schema += `.default(${JSON.stringify(coerceDefaultValue(attr.defaultValue))})`;
   }
 
   schema += `.describe(${JSON.stringify(formatFieldDescription(attr.name))})`;
@@ -180,13 +180,16 @@ export function simpleTypeToZod(st: XsdSimpleType): string {
   return schema;
 }
 
-function coerceDefault(element: XsdElement): string | number | boolean {
-  const val = element.defaultValue!;
+function coerceDefaultValue(val: string): string | number | boolean {
   if (val === 'true') return true;
   if (val === 'false') return false;
   const num = Number(val);
   if (!isNaN(num) && val !== '') return num;
   return val;
+}
+
+function coerceDefault(element: XsdElement): string | number | boolean {
+  return coerceDefaultValue(element.defaultValue!);
 }
 
 function formatFieldDescription(name: string): string {
