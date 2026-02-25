@@ -10,6 +10,11 @@ export function generateEnvExample(config: ProjectConfig): string {
     return `# ${v.description} (${comment.substring(2)})\n${prefix}_${v.name}=${value}`;
   });
 
+  if (!config.envVars.find(v => v.name === 'BASE_URL')) {
+    const baseUrlValue = config.baseUrl || '';
+    lines.unshift(`# SOAP service endpoint URL (Required)\n${prefix}_BASE_URL=${baseUrlValue}`);
+  }
+
   if (config.authType === 'session' || config.authType === 'basic') {
     if (!config.envVars.find(v => v.name === 'USER_ID')) {
       lines.push(`# Authentication user ID (Required)\n${prefix}_USER_ID=`);

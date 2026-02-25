@@ -29,7 +29,7 @@ import { generatePytestTestsWithClient } from './templates/test-pytest';
 import { generatePostmanCollection } from './templates/test-postman';
 import { generateSoapUIProject } from './templates/test-soapui';
 import { generateK6ScriptWithScenarios } from './templates/test-k6';
-import { patchWsdlWithServiceElement } from './wsdl-patcher';
+import { patchWsdlWithServiceElement, patchXsdContent } from './wsdl-patcher';
 
 export function generateProject(
   wsdlDefinitions: WsdlDefinition[],
@@ -125,6 +125,13 @@ export function generateProject(
       if (!rawContent) continue;
       const patched = patchWsdlWithServiceElement(rawContent, wsdl);
       files.push({ path: `wsdl/${filename}`, content: patched });
+    }
+
+    // Patched XSD files — fix types unknown to node-soap's Primitives list
+    // (e.g. xsd:anySimpleType → xsd:anyType) to prevent postProcess crashes.
+    for (const [filename, content] of rawFiles) {
+      if (!/\.xsd$/i.test(filename)) continue;
+      files.push({ path: `wsdl/${filename}`, content: patchXsdContent(content) });
     }
   }
 
