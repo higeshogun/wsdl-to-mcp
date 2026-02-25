@@ -1,4 +1,5 @@
 export interface WsdlDefinition {
+  sourceFile?: string;
   targetNamespace: string;
   namespaces: Record<string, string>;
   services: WsdlService[];

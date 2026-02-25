@@ -25,6 +25,7 @@ export function parseAllFiles(files: Map<string, string>): ParseResult {
 
       if (filename.endsWith('.wsdl') || rootLocal === 'definitions') {
         const wsdl = parseWsdl(doc);
+        wsdl.sourceFile = filename;
         wsdlDefinitions.push(wsdl);
 
         // Extract inline schemas from <wsdl:types>
