@@ -8,7 +8,13 @@ import type { WsdlDefinition } from '../types/wsdl-types';
  *   anySimpleType → treated as anyType (both mean "accept any simple value")
  */
 export function patchXsdContent(xsdContent: string): string {
-  return xsdContent.replace(/\banySimpleType\b/g, 'anyType');
+  return xsdContent
+    .replace(/\banySimpleType\b/g, 'anyType')
+    // node-soap applies a namespace prefix to locally-scoped elements/attributes when
+    // elementFormDefault="qualified" but never declares that prefix in the SOAP envelope,
+    // causing ElementPrefixUnbound parse errors on the server.  Downgrade to "unqualified"
+    // so that local names are sent without a prefix.
+    .replace(/\belementFormDefault="qualified"/g, 'elementFormDefault="unqualified"');
 }
 
 /**
