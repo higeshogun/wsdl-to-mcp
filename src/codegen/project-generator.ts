@@ -29,12 +29,14 @@ import { generatePytestTestsWithClient } from './templates/test-pytest';
 import { generatePostmanCollection } from './templates/test-postman';
 import { generateSoapUIProject } from './templates/test-soapui';
 import { generateK6ScriptWithScenarios } from './templates/test-k6';
+import { patchWsdlWithServiceElement } from './wsdl-patcher';
 
 export function generateProject(
   wsdlDefinitions: WsdlDefinition[],
   xsdSchemas: XsdSchema[],
   config: ProjectConfig,
   enhancedDescriptions: Record<string, string> = {},
+  rawFiles?: Map<string, string>,
 ): GeneratedFile[] {
   const registry = new TypeRegistry();
   for (const schema of xsdSchemas) {
@@ -110,6 +112,19 @@ export function generateProject(
         path: 'tests/load-test.k6.js',
         content: generateK6ScriptWithScenarios(services, config, registry),
       });
+    }
+  }
+
+  // Patched WSDL files — inject <service> elements when the originals have them commented out.
+  // node-soap requires a service element to expose OperationAsync methods.
+  if (rawFiles) {
+    for (const wsdl of wsdlDefinitions) {
+      const filename = wsdl.sourceFile;
+      if (!filename) continue;
+      const rawContent = rawFiles.get(filename);
+      if (!rawContent) continue;
+      const patched = patchWsdlWithServiceElement(rawContent, wsdl);
+      files.push({ path: `wsdl/${filename}`, content: patched });
     }
   }
 

@@ -14,9 +14,15 @@ export async function buildAndDownloadZip(
     root.file(file.path, file.content);
   }
 
+  // Skip raw WSDLs that were already patched and included as generated files
+  const patchedWsdlNames = new Set(
+    files.filter(f => f.path.startsWith('wsdl/')).map(f => f.path.slice('wsdl/'.length)),
+  );
   const wsdlFolder = root.folder('wsdl')!;
   for (const [name, content] of wsdlFiles) {
-    wsdlFolder.file(name, content);
+    if (!patchedWsdlNames.has(name)) {
+      wsdlFolder.file(name, content);
+    }
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });

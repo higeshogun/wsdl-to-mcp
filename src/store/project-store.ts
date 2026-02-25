@@ -93,10 +93,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   generate: () => {
-    const { wsdlDefinitions, xsdSchemas, config, enhancedDescriptions } = get();
+    const { wsdlDefinitions, xsdSchemas, config, enhancedDescriptions, files } = get();
     try {
-      const files = generateProject(wsdlDefinitions, xsdSchemas, config, enhancedDescriptions);
-      set({ generatedFiles: files });
+      const generatedFiles = generateProject(wsdlDefinitions, xsdSchemas, config, enhancedDescriptions, files);
+      set({ generatedFiles });
     } catch (err) {
       console.error('Generation error:', err);
       set({
