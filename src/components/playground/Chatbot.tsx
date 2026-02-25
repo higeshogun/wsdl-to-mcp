@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { BrowserMcpServer, SoapTrafficEntry } from './BrowserMcpServer';
+import type { PlaygroundServer, SoapTrafficEntry } from './BrowserMcpServer';
 import type { NormalizedMessage, ProviderConfig, ToolDefinition, ProviderType } from './providers/types';
 import { getProvider } from './providers/index';
 import { getChromeAIAvailability, isPromptApiUsable, explainSoapError } from '../../ai/chrome-ai';
@@ -12,7 +12,7 @@ interface ChatbotProps {
   proxyUrl: string;
   baseUrl: string;
   model: string;
-  server: BrowserMcpServer;
+  server: PlaygroundServer;
   /** Tool names to hide from the LLM (handled automatically, e.g. Login/Logout) */
   hiddenToolNames?: Set<string>;
   /** Per-tool input schema overrides (tool name -> schema) */
