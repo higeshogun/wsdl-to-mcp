@@ -18,9 +18,19 @@ export function generateIndexTs(
     ? `import { SessionManager } from './session/session-manager.js';\n`
     : '';
 
-  const clientCreation = services.map((svc, index) => {
+  const loginOp = config.sessionConfig?.loginOperation || 'Login';
+  const logoutOp = config.sessionConfig?.logoutOperation || 'Logout';
+
+  // Find the service that owns the login operation (auth client) by name match.
+  // Fall back to the first service if none explicitly matches.
+  const authService = hasSession
+    ? (services.find(svc => svc.operations.some(op => op.name === loginOp)) ?? services[0])
+    : null;
+  const authClientKey = authService?.clientKey;
+
+  const clientCreation = services.map(svc => {
     const funcName = `create${toPascalCase(svc.clientKey)}Client`;
-    const urlVar = hasSession && index === 0 ? `${prefix}_AUTH_URL` : `${prefix}_BASE_URL`;
+    const urlVar = hasSession && svc.clientKey === authClientKey ? `${prefix}_AUTH_URL` : `${prefix}_BASE_URL`;
     return `    ${funcName}(config.${urlVar}),`;
   }).join('\n');
 
@@ -34,11 +44,8 @@ export function generateIndexTs(
     `    ${svc.clientKey},`
   ).join('\n');
 
-  const loginOp = config.sessionConfig?.loginOperation || 'Login';
-  const logoutOp = config.sessionConfig?.logoutOperation || 'Logout';
-
   const sessionSetup = hasSession ? `
-  const session = new SessionManager(${services[0]?.clientKey || 'client'}, {
+  const session = new SessionManager(${authClientKey || services[0]?.clientKey || 'client'}, {
     userID: config.${prefix}_USER_ID,
     password: config.${prefix}_PASSWORD,
     loginType: config.${prefix}_LOGIN_TYPE || 'GetOrCreateSession',

@@ -135,8 +135,24 @@ check('Has PASSWORD', env.includes('CXW_PASSWORD'));
 
 console.log('\n── index.ts client wiring ──');
 const index = byPath.get('src/index.ts') ?? '';
-check('Auth client uses AUTH_URL', index.includes('CXW_AUTH_URL'));
-check('Business client uses BASE_URL', index.includes('CXW_BASE_URL'));
+// Auth service (SharedMessages) has 'Login' operation — must use AUTH_URL
+// Business service (CreditQuery) has only 'TestRequest' — must use BASE_URL
+check(
+  'Auth service (authenticationPortType) uses AUTH_URL',
+  /createAuthenticationPortTypeClient\(config\.CXW_AUTH_URL\)/.test(index),
+  'actual: ' + (index.match(/createAuthentication\w+Client\([^)]+\)/)?.[0] ?? 'not found'),
+);
+check(
+  'Business service (creditQueryPortType) uses BASE_URL',
+  /createCreditQueryPortTypeClient\(config\.CXW_BASE_URL\)/.test(index),
+  'actual: ' + (index.match(/createCreditQuery\w+Client\([^)]+\)/)?.[0] ?? 'not found'),
+);
+check(
+  'SessionManager constructed with auth client key',
+  /new SessionManager\(authenticationPortType,/.test(index) ||
+    index.includes("new SessionManager(authenticationPortType,"),
+  'actual: ' + (index.match(/new SessionManager\([^,]+,/)?.[0] ?? 'not found'),
+);
 
 console.log('\n── error-handler.ts regex escape ──');
 const eh = byPath.get('src/utils/error-handler.ts') ?? '';
