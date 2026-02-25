@@ -157,8 +157,8 @@ function buildServiceInfos(
         }
       }
 
-      // Determine WSDL file name from service name
-      wsdlFile = serviceName.replace(/Service$/i, '') + '.wsdl';
+      // Use the actual uploaded filename so the generated server finds the right file
+      wsdlFile = wsdl.sourceFile ?? serviceName.replace(/Service$/i, '') + '.wsdl';
 
       const clientKey = serviceToClientKey(serviceName);
       const operations: OperationInfo[] = pt.operations.map(op => {
