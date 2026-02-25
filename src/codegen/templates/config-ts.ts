@@ -28,6 +28,14 @@ export function generateConfigTs(config: ProjectConfig): string {
         defaultValue: 'GetOrCreateSession',
       });
     }
+    if (!envVars.find(v => v.name === 'SESSION_NS')) {
+      envVars.push({
+        name: 'SESSION_NS',
+        description: 'XML namespace for the session SOAP header',
+        required: false,
+        defaultValue: config.sessionConfig?.sessionHeaderNamespace || '',
+      });
+    }
   }
 
   const prefix = config.toolPrefix.toUpperCase();

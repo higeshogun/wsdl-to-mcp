@@ -3,6 +3,7 @@ export interface ProjectConfig {
   projectDescription: string;
   toolPrefix: string;
   baseUrl: string;
+  authUrl: string;
   authType: 'none' | 'basic' | 'session';
   sessionConfig?: {
     loginOperation: string;
@@ -32,6 +33,7 @@ export function defaultConfig(): ProjectConfig {
     projectDescription: 'Auto-generated MCP server for SOAP web services',
     toolPrefix: 'api',
     baseUrl: '',
+    authUrl: '',
     authType: 'none',
     soapVersion: '1.1',
     envVars: [

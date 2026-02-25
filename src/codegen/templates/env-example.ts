@@ -5,7 +5,9 @@ export function generateEnvExample(config: ProjectConfig): string {
 
   const lines = config.envVars.map(v => {
     const comment = v.required ? '# Required' : '# Optional';
-    return `# ${v.description} (${comment.substring(2)})\n${prefix}_${v.name}=${v.defaultValue || ''}`;
+    let value = v.defaultValue || '';
+    if (v.name === 'BASE_URL' && config.baseUrl) value = config.baseUrl;
+    return `# ${v.description} (${comment.substring(2)})\n${prefix}_${v.name}=${value}`;
   });
 
   if (config.authType === 'session' || config.authType === 'basic') {
@@ -19,10 +21,15 @@ export function generateEnvExample(config: ProjectConfig): string {
 
   if (config.authType === 'session') {
     if (!config.envVars.find(v => v.name === 'AUTH_URL')) {
-      lines.push(`# Authentication service endpoint URL - may differ from BASE_URL (Required)\n${prefix}_AUTH_URL=`);
+      const authUrlValue = config.authUrl || config.baseUrl || '';
+      lines.push(`# Authentication service endpoint URL - may differ from BASE_URL (Required)\n${prefix}_AUTH_URL=${authUrlValue}`);
     }
     if (!config.envVars.find(v => v.name === 'LOGIN_TYPE')) {
       lines.push(`# Session strategy: GetSession, CreateSession, or GetOrCreateSession (Optional)\n${prefix}_LOGIN_TYPE=GetOrCreateSession`);
+    }
+    if (!config.envVars.find(v => v.name === 'SESSION_NS')) {
+      const ns = config.sessionConfig?.sessionHeaderNamespace || '';
+      lines.push(`# XML namespace for the session SOAP header (Optional)\n${prefix}_SESSION_NS=${ns}`);
     }
   }
 
