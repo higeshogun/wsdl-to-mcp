@@ -3,6 +3,10 @@ import type { ProjectConfig } from '../../types/project-config';
 export function generateConfigTs(config: ProjectConfig): string {
   const envVars = [...config.envVars];
 
+  if (!envVars.find(v => v.name === 'BASE_URL')) {
+    envVars.unshift({ name: 'BASE_URL', description: 'SOAP service endpoint URL', required: true });
+  }
+
   if (config.authType === 'session' || config.authType === 'basic') {
     if (!envVars.find(v => v.name === 'USER_ID')) {
       envVars.push({ name: 'USER_ID', description: 'Authentication user ID', required: true });
@@ -26,6 +30,14 @@ export function generateConfigTs(config: ProjectConfig): string {
         description: 'Session strategy: GetSession, CreateSession, or GetOrCreateSession',
         required: false,
         defaultValue: 'GetOrCreateSession',
+      });
+    }
+    if (!envVars.find(v => v.name === 'SESSION_NS')) {
+      envVars.push({
+        name: 'SESSION_NS',
+        description: 'XML namespace for the session SOAP header',
+        required: false,
+        defaultValue: config.sessionConfig?.sessionHeaderNamespace || '',
       });
     }
   }

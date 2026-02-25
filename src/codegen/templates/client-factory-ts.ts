@@ -16,8 +16,11 @@ const WSDL_DIR = path.join(__dirname, '..', '..', 'wsdl');
     return `
 export async function ${funcName}(baseUrl: string): Promise<soap.Client> {
   const wsdlPath = path.join(WSDL_DIR, '${svc.wsdlFile}');
+  console.error('[client-factory] Loading WSDL:', wsdlPath);
+  if (!baseUrl) throw new Error('[client-factory] ${funcName}: baseUrl is required (check your .env file)');
   const client = await soap.createClientAsync(wsdlPath);
   client.setEndpoint(\`\${baseUrl}\`);
+  console.error('[client-factory] ${funcName} ready at:', baseUrl);
   return client;
 }`;
   }).join('\n');

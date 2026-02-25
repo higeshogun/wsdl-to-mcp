@@ -57,7 +57,22 @@ export function ConfigureStep() {
             onChange={e => updateConfig({ baseUrl: e.target.value })}
             placeholder="https://api.example.com/soap"
           />
+          <span className="form-hint">Written to .env.example as {config.toolPrefix.toUpperCase()}_BASE_URL</span>
         </div>
+
+        {config.authType === 'session' && (
+          <div className="form-group full-width">
+            <label htmlFor="authUrl">Authentication Endpoint URL</label>
+            <input
+              id="authUrl"
+              type="text"
+              value={config.authUrl}
+              onChange={e => updateConfig({ authUrl: e.target.value })}
+              placeholder="https://api.example.com/auth"
+            />
+            <span className="form-hint">Written to .env.example as {config.toolPrefix.toUpperCase()}_AUTH_URL — leave blank if same as Base URL</span>
+          </div>
+        )}
 
         <div className="form-group full-width">
           <label>SOAP Version</label>
