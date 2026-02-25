@@ -16,6 +16,15 @@ export function Header({ onManualClick }: HeaderProps) {
             </button>
           </>
         )}
+        {' — '}
+        <a
+          href="https://github.com/higeshogun/wsdl-to-mcp"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="header-manual-link"
+        >
+          GitHub
+        </a>
       </p>
     </header>
   );
