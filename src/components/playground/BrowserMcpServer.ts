@@ -5,6 +5,7 @@ import { getLocalName } from '../../parser/xml-parser';
 import { operationToToolName, operationToDescription } from '../../codegen/name-utils';
 import { elementToJsonSchema } from '../../codegen/json-schema-mapper';
 import { jsonToXml, escapeXml } from '../../utils/json-to-xml';
+import type { XmlAttributeInfo } from '../../utils/json-to-xml';
 import { sanitizeSchema } from './providers/schema-utils';
 
 export interface PlaygroundSessionConfig {
@@ -24,6 +25,8 @@ export interface Tool {
   description?: string;
   inputSchema: any;
   outputSchema?: any;
+  /** The resolved namespace that will be used in the SOAP body for this tool */
+  resolvedNamespace?: string;
 }
 
 export interface SoapTrafficEntry {
@@ -35,10 +38,18 @@ export interface SoapTrafficEntry {
   timestamp: Date;
 }
 
+export interface ToolNamespaceConfig {
+  /** Override the body element namespace for this tool */
+  namespace?: string;
+  /** Additional xmlns declarations added to the Envelope (prefix → URI) */
+  additionalNamespaces?: Record<string, string>;
+}
+
 interface ToolInfo {
   op: WsdlOperation;
   serviceName: string;
   inputMessage: WsdlMessage | undefined;
+  inputSchema: any;
   endpoint: string;
   targetNamespace: string;
   soapAction: string;
@@ -58,22 +69,28 @@ export class BrowserMcpServer {
   private loginInProgress: Promise<void> | null = null;
 
   private elementNamespaceCache = new Map<string, string>();
+  private elementFormCache = new Map<string, 'qualified' | 'unqualified'>();
   private endpointOverride: string | null = null;
   private soapVersionOverride: '1.1' | '1.2' | null = null;
   private namespaceOverrides: Map<string, string> = new Map();
+  private toolNamespaceConfig: Map<string, ToolNamespaceConfig> = new Map();
+  private enhancedDescriptions: Record<string, string> = {};
 
   constructor(
     wsdlDefinitions: WsdlDefinition[],
-    xsdSchemas: XsdSchema[]
+    xsdSchemas: XsdSchema[],
+    enhancedDescriptions: Record<string, string> = {},
   ) {
     this.wsdlDefinitions = wsdlDefinitions;
+    this.enhancedDescriptions = enhancedDescriptions;
     this.registry = new TypeRegistry();
     xsdSchemas.forEach(s => {
       this.registry.addSchema(s);
-      // Cache element namespaces for fast lookup
+      // Cache element namespaces and form defaults for fast lookup
       for (const elName of s.elements.keys()) {
         // Align with TypeRegistry behavior (last-wins) to ensure definition and namespace match
         this.elementNamespaceCache.set(elName, s.targetNamespace);
+        this.elementFormCache.set(elName, s.elementFormDefault);
       }
     });
     this.tools = new Map();
@@ -92,6 +109,11 @@ export class BrowserMcpServer {
   /** Set namespace overrides (original URI → replacement URI). */
   setNamespaceOverrides(overrides: Record<string, string>): void {
     this.namespaceOverrides = new Map(Object.entries(overrides));
+  }
+
+  /** Set per-tool namespace config (body namespace override + additional xmlns declarations). */
+  setToolNamespaceConfig(config: Record<string, ToolNamespaceConfig>): void {
+    this.toolNamespaceConfig = new Map(Object.entries(config));
   }
 
   /** Apply namespace overrides — returns the override if one exists, otherwise the original. */
@@ -126,6 +148,17 @@ export class BrowserMcpServer {
   clearSession(): void {
     this.sessionTicket = null;
     this.onSessionChange?.();
+  }
+
+  /** Manually trigger a login and return the result. */
+  async login(proxyUrl: string): Promise<void> {
+    this.sessionTicket = null;
+    this.onSessionChange?.();
+    this.loginInProgress = this.doLogin(proxyUrl).finally(() => {
+      this.loginInProgress = null;
+      this.onSessionChange?.();
+    });
+    await this.loginInProgress;
   }
 
   /** Get current session status. */
@@ -258,10 +291,11 @@ export class BrowserMcpServer {
                 required: elSchema.required || []
               };
             } else {
+              const isOptional = el.minOccurs === 0 || elSchema.default !== undefined;
               inputSchema = {
                 type: 'object',
                 properties: { [part.name]: elSchema },
-                required: [part.name]
+                ...(isOptional ? {} : { required: [part.name] }),
               };
             }
           }
@@ -276,6 +310,20 @@ export class BrowserMcpServer {
         }
       }
       return { inputMessage, inputSchema };
+    };
+
+    const resolveToolNamespace = (op: WsdlOperation, defMessages: WsdlMessage[], targetNs: string): string => {
+      const inputMsgLocalName = getLocalName(op.inputMessage);
+      const inputMessage = defMessages.find(m => m.name === inputMsgLocalName)
+        || allMessages.find(m => m.name === inputMsgLocalName);
+      if (inputMessage && inputMessage.parts.length > 0) {
+        const part = inputMessage.parts[0];
+        if (part.element) {
+          const elName = getLocalName(part.element);
+          return this.getElementNamespace(elName) ?? targetNs;
+        }
+      }
+      return targetNs;
     };
 
     const buildOutputSchema = (op: WsdlOperation, defMessages: WsdlMessage[]): any | undefined => {
@@ -330,7 +378,7 @@ export class BrowserMcpServer {
 
                 let toolName = operationToToolName(service.name, op.name);
                 toolName = ensureUniqueName(toolName);
-                const desc = op.documentation || operationToDescription(op.name);
+                const desc = this.enhancedDescriptions[toolName] || op.documentation || operationToDescription(op.name);
 
                 const { inputMessage, inputSchema } = buildInputSchema(op, def.messages);
 
@@ -340,12 +388,14 @@ export class BrowserMcpServer {
                 ) || def;
 
                 const outputSchema = buildOutputSchema(op, def.messages);
-                tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema });
+                const resolvedNs = resolveToolNamespace(op, def.messages, definingWsdl.targetNamespace);
+                tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema, resolvedNamespace: resolvedNs });
                 const bindingOp = binding.operations.find(bo => bo.name === op.name);
                 this.tools.set(toolName, {
                     op,
                     serviceName: service.name,
                     inputMessage,
+                    inputSchema,
                     endpoint: port.soapAddress,
                     targetNamespace: definingWsdl.targetNamespace,
                     soapAction: bindingOp?.soapAction ?? '',
@@ -373,17 +423,19 @@ export class BrowserMcpServer {
 
           let toolName = operationToToolName(portType.name, op.name);
           toolName = ensureUniqueName(toolName);
-          const desc = op.documentation || operationToDescription(op.name);
+          const desc = this.enhancedDescriptions[toolName] || op.documentation || operationToDescription(op.name);
 
           const { inputMessage, inputSchema } = buildInputSchema(op, def.messages);
 
           const outputSchema = buildOutputSchema(op, def.messages);
-          tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema });
+          const resolvedNs = resolveToolNamespace(op, def.messages, def.targetNamespace);
+          tools.push({ name: toolName, description: desc, inputSchema: sanitizeSchema(inputSchema), outputSchema, resolvedNamespace: resolvedNs });
 
           this.tools.set(toolName, {
             op,
             serviceName: portType.name,
             inputMessage,
+            inputSchema,
             endpoint: 'http://localhost:8080/soap', // Default endpoint (will use endpointOverride if set)
             targetNamespace: def.targetNamespace,
             soapAction: '',
@@ -407,35 +459,78 @@ export class BrowserMcpServer {
 
     let rootName = op.name;
     let namespace = targetNamespace;
+    let isQualified = false;
 
     if (inputMessage && inputMessage.parts.length > 0) {
       const part = inputMessage.parts[0];
       if (part.element) {
         rootName = getLocalName(part.element);
         namespace = this.getElementNamespace(rootName) ?? targetNamespace;
+        isQualified = this.elementFormCache.get(rootName) === 'qualified';
       }
     }
 
-    // Apply namespace override
+    // Apply global namespace override first
     namespace = this.resolveNamespace(namespace);
 
-    const soapBody = jsonToXml(args, rootName, namespace);
+    // Apply per-tool namespace config
+    const toolNsConfig = this.toolNamespaceConfig.get(name);
+    if (toolNsConfig?.namespace) {
+      namespace = toolNsConfig.namespace;
+    }
+
+    // Extract properties marked as XML attributes, carrying namespace info if present
+    const xmlAttributes = new Map<string, XmlAttributeInfo | null>();
+    const schema = toolInfo.inputSchema;
+    if (schema?.properties) {
+      for (const [propName, propSchema] of Object.entries(schema.properties)) {
+        if ((propSchema as any)?.['x-xml-attribute']) {
+          const nsUri: string | undefined = (propSchema as any)['x-xml-attribute-ns-uri'];
+          xmlAttributes.set(propName, nsUri ? { nsUri } : null);
+        }
+      }
+    }
+
+    // Use a namespace prefix for the body element and its children (ns2: style),
+    // matching the SOAP style most Java/JAXB servers generate and expect.
+    // The prefix lets us reuse it for namespace-qualified XML attributes (e.g. ns2:dslRef).
+    const bodyNsPrefix = 'ns2';
+    const soapBody = jsonToXml(args, rootName, namespace, {
+      useXsiNil: true,
+      nsPrefix: bodyNsPrefix,
+      ...(xmlAttributes.size > 0 ? { xmlAttributes } : {}),
+    });
 
     // Include session header if available
+    // Format matches spec: ns1:session with soapenv:actor + soapenv:mustUnderstand,
+    // and ns1: prefix on userID and sessionTicket children.
     let sessionHeaderXml = '';
     if (this.sessionConfig && this.sessionCredentials && this.sessionTicket) {
-      const ns = this.sessionConfig.sessionHeaderNamespace;
+      const ns = escapeXml(this.sessionConfig.sessionHeaderNamespace);
       const uid = escapeXml(this.sessionCredentials.userId);
       const ticket = escapeXml(this.sessionTicket);
-      sessionHeaderXml = `<session xmlns="${ns}"><userID>${uid}</userID><sessionTicket>${ticket}</sessionTicket></session>`;
+      sessionHeaderXml = `<ns1:session soapenv:actor="http://schemas.xmlsoap.org/soap/actor/next" soapenv:mustUnderstand="0" xmlns:ns1="${ns}"><ns1:userID>${uid}</ns1:userID><ns1:sessionTicket>${ticket}</ns1:sessionTicket></ns1:session>`;
     }
 
     const envNs = version === '1.2'
       ? 'http://www.w3.org/2003/05/soap-envelope'
       : 'http://schemas.xmlsoap.org/soap/envelope/';
 
-    return `<soapenv:Envelope xmlns:soapenv="${envNs}">
-   <soapenv:Header>${sessionHeaderXml}</soapenv:Header>
+    // Build additional xmlns declarations for the Envelope element
+    let extraXmlns = '';
+    if (toolNsConfig?.additionalNamespaces) {
+      for (const [prefix, uri] of Object.entries(toolNsConfig.additionalNamespaces)) {
+        if (prefix && uri) {
+          extraXmlns += ` xmlns:${escapeXml(prefix)}="${escapeXml(uri)}"`;
+        }
+      }
+    }
+
+    const headerEl = sessionHeaderXml
+      ? `\n   <soapenv:Header>${sessionHeaderXml}</soapenv:Header>`
+      : '';
+
+    return `<soapenv:Envelope xmlns:soapenv="${envNs}" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"${extraXmlns}>${headerEl}
    <soapenv:Body>
       ${soapBody}
    </soapenv:Body>
@@ -446,8 +541,11 @@ export class BrowserMcpServer {
     const toolInfo = this.tools.get(name);
     if (!toolInfo) throw new Error(`Tool ${name} not found`);
 
-    const { endpoint, soapAction } = toolInfo;
+    const { endpoint, targetNamespace, op } = toolInfo;
     const version = this.soapVersionOverride || toolInfo.soapVersion;
+
+    // Use explicit soapAction from WSDL, or fall back to targetNamespace/operationName
+    const soapAction = toolInfo.soapAction || (targetNamespace.endsWith('/') ? `${targetNamespace}${op.name}` : `${targetNamespace}/${op.name}`);
 
     // Ensure session before building envelope (so ticket is available)
     if (!skipSession && this.sessionConfig && this.sessionCredentials) {
@@ -472,25 +570,31 @@ export class BrowserMcpServer {
     // SOAP 1.1: text/xml with SOAPAction header
     const headers: Record<string, string> = version === '1.2'
       ? { 'Content-Type': `application/soap+xml; charset=utf-8; action="${soapAction}"` }
-      : { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': soapAction };
+      : { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': `"${soapAction}"` };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
     try {
         const response = await fetch(target.toString(), {
             method: 'POST',
             headers,
-            body: envelope
+            body: envelope,
+            signal: controller.signal,
         });
 
         const text = await response.text();
         const trimmedStart = text.slice(0, 200).trim().toLowerCase();
         const isHtml = trimmedStart.startsWith('<!doctype html') || trimmedStart.startsWith('<html');
+        // Detect SOAP faults (can arrive with HTTP 200, especially SOAP 1.2)
+        const hasSoapFault = /<[^>]*:?Fault[>\s/]/i.test(text);
 
         this.onSoapTraffic?.({
             id: ++this.soapTrafficCounter,
             toolName: name,
             request: envelope,
             response: text,
-            isError: !response.ok || isHtml,
+            isError: !response.ok || isHtml || hasSoapFault,
             timestamp: new Date(),
         });
 
@@ -513,7 +617,12 @@ export class BrowserMcpServer {
 
         return text;
     } catch (err: any) {
+        if (err.name === 'AbortError') {
+            throw new Error(`SOAP request timed out after 30s for tool ${name}`);
+        }
         throw new Error(`Failed to call tool: ${err.message}`);
+    } finally {
+        clearTimeout(timeoutId);
     }
   }
 }

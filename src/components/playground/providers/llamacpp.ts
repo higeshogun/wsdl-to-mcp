@@ -71,6 +71,7 @@ export const llamacppProvider: LLMProvider = {
       messages: openaiMessages,
       stream: false,
     };
+    if (config.maxTokens) body.max_tokens = config.maxTokens;
 
     if (openaiTools.length > 0) {
       body.tools = openaiTools;

@@ -44,7 +44,9 @@ export function UploadStep() {
       <div style={{ marginTop: '24px' }}>
         <h3 style={{ fontSize: '1rem', marginBottom: '12px' }}>Or load from URL</h3>
 
-        <div style={{ marginBottom: '12px' }}>
+        <WsdlUrlLoader onLoaded={addFiles} proxyUrl={proxyUrl} />
+
+        <div style={{ marginTop: '12px' }}>
           <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.85rem', fontWeight: 500 }}>
             CORS Proxy URL (required for cross-origin WSDL URLs):
           </label>
@@ -70,8 +72,6 @@ export function UploadStep() {
             </div>
           </details>
         </div>
-
-        <WsdlUrlLoader onLoaded={addFiles} proxyUrl={proxyUrl} />
       </div>
 
       {files.size > 0 && (

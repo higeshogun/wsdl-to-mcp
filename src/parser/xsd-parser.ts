@@ -5,9 +5,11 @@ const XSD_NS = 'http://www.w3.org/2001/XMLSchema';
 
 export function parseXsdSchema(schemaEl: Element): XsdSchema {
   const targetNamespace = schemaEl.getAttribute('targetNamespace') || '';
+  const elementFormDefault = (schemaEl.getAttribute('elementFormDefault') || 'unqualified') as 'qualified' | 'unqualified';
   const elements = new Map<string, XsdElement>();
   const complexTypes = new Map<string, XsdComplexType>();
   const simpleTypes = new Map<string, XsdSimpleType>();
+  const globalAttributes = new Map<string, XsdAttribute>();
 
   for (const el of getChildElements(schemaEl, 'element', XSD_NS)) {
     const parsed = parseElement(el);
@@ -24,7 +26,13 @@ export function parseXsdSchema(schemaEl: Element): XsdSchema {
     if (parsed.name) simpleTypes.set(parsed.name, parsed);
   }
 
-  return { targetNamespace, elements, complexTypes, simpleTypes };
+  // Parse top-level global attribute declarations
+  for (const el of getChildElements(schemaEl, 'attribute', XSD_NS)) {
+    const parsed = parseAttribute(el);
+    if (parsed.name) globalAttributes.set(parsed.name, parsed);
+  }
+
+  return { targetNamespace, elementFormDefault, elements, complexTypes, simpleTypes, globalAttributes };
 }
 
 export function parseElement(el: Element): XsdElement {
@@ -146,5 +154,16 @@ function parseAttribute(el: Element): XsdAttribute {
   const stEl = getFirstChildElement(el, 'simpleType', XSD_NS);
   if (stEl) simpleType = parseSimpleType(stEl);
 
-  return { name: name || getLocalName(ref || ''), type, use, defaultValue, ref, simpleType };
+  // For ref-based attributes (e.g. ref="cq:dslRef"), capture the namespace URI
+  // of the prefix so the XML attribute can be correctly namespace-qualified.
+  let refNsUri: string | undefined;
+  if (ref) {
+    const colonIdx = ref.indexOf(':');
+    if (colonIdx > 0) {
+      const prefix = ref.substring(0, colonIdx);
+      refNsUri = el.lookupNamespaceURI(prefix) || undefined;
+    }
+  }
+
+  return { name: name || getLocalName(ref || ''), type, use, defaultValue, ref, simpleType, refNsUri };
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useProjectStore } from './store/project-store';
 import { Header } from './components/layout/Header';
 import { Stepper } from './components/layout/Stepper';
@@ -7,11 +8,13 @@ import { ReviewStep } from './components/steps/ReviewStep';
 import { DownloadStep } from './components/steps/DownloadStep';
 import { TestGenerationStep } from './components/steps/TestGenerationStep';
 import { TryItOutStep } from './components/playground/TryItOutStep';
+import { UserManual } from './components/UserManual';
 import './App.css';
 
 function App() {
   const { currentStep, setStep, files, wsdlDefinitions, generatedFiles } =
     useProjectStore();
+  const [showManual, setShowManual] = useState(false);
 
   const hasFiles = files.size > 0;
   const hasOperations = wsdlDefinitions.some(w =>
@@ -40,9 +43,10 @@ function App() {
 
   return (
     <div className="app">
-      <Header />
+      <Header onManualClick={() => setShowManual(true)} />
+      {showManual && <UserManual onClose={() => setShowManual(false)} />}
 
-      <details className="about-section" open>
+      <details className="about-section">
         <summary>What is this?</summary>
         <div className="about-content">
           <p className="about-tagline">

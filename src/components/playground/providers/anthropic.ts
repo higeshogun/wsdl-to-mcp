@@ -64,7 +64,7 @@ export const anthropicProvider: LLMProvider = {
       },
       body: JSON.stringify({
         model: config.model,
-        max_tokens: 4096,
+        max_tokens: config.maxTokens || 4096,
         messages: messages.map(m => ({
           role: m.role,
           content: m.content.map(block => {

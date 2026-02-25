@@ -1,18 +1,29 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useProjectStore } from '../../store/project-store';
 import { BrowserMcpServer } from './BrowserMcpServer';
-import type { Tool } from './BrowserMcpServer';
+import type { Tool, ToolNamespaceConfig } from './BrowserMcpServer';
 import type { PlaygroundSessionConfig, PlaygroundSessionCredentials } from './BrowserMcpServer';
 import { Chatbot } from './Chatbot';
 import { IndexedDBStorage } from './IndexedDBStorage';
 import { WORKER_SCRIPT } from '../common/cors-proxy-worker';
 import { getProvider, providerList } from './providers/index';
 import type { ProviderType, ProviderConfig, ModelOption } from './providers/types';
+import { isWebMCPAvailable, registerSOAPToolsWithWebMCP, clearWebMCPContext } from '../../ai/webmcp';
 
 const storage = new IndexedDBStorage();
 
+interface ProviderSettings {
+  apiKey: string;
+  proxyUrl: string;
+  baseUrl: string;
+  model: string;
+  customModel: string;
+  maxTokens: string;
+  contextWindow: string;
+}
+
 export function TryItOutStep() {
-  const { wsdlDefinitions, xsdSchemas, config } = useProjectStore();
+  const { wsdlDefinitions, xsdSchemas, config, enhancedDescriptions } = useProjectStore();
   const [provider, setProvider] = useState<ProviderType>((import.meta.env.VITE_DEFAULT_PROVIDER as ProviderType) || 'ollama');
   const [apiKey, setApiKey] = useState('');
   const [proxyUrl, setProxyUrl] = useState(import.meta.env.VITE_DEFAULT_PROXY_URL || '');
@@ -31,51 +42,114 @@ export function TryItOutStep() {
   const [soapEndpoint, setSoapEndpoint] = useState('');
   const [sessionHeaderNs, setSessionHeaderNs] = useState('');
   const [sessionStatus, setSessionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [schemaOverrides, setSchemaOverrides] = useState<Record<string, any>>({});
   const [editingSchema, setEditingSchema] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [nsOverrides, setNsOverrides] = useState<Record<string, string>>({});
+  const [toolNsConfig, setToolNsConfig] = useState<Record<string, ToolNamespaceConfig>>({});
+  const [editingToolNs, setEditingToolNs] = useState<string | null>(null);
+  const [maxTokens, setMaxTokens] = useState('');
+  const [contextWindow, setContextWindow] = useState('');
+
+  const [webMCPRegistered, setWebMCPRegistered] = useState(false);
+
+  // Guard: don't persist until initial load from storage is done
+  const loadedRef = useRef(false);
+
+  // Keep latest proxyUrl in a ref so WebMCP execute closures always use the current value
+  const proxyUrlRef = useRef(proxyUrl);
+  proxyUrlRef.current = proxyUrl;
+
+  // Per-provider settings map — always read/written via ref to avoid stale closures
+  const providerConfigsRef = useRef<Record<string, ProviderSettings>>({});
+  const providerRef = useRef(provider);
+  providerRef.current = provider;
+
+  // Save a single field for the current provider into the ref + storage
+  const saveProviderField = useCallback((field: keyof ProviderSettings, value: string) => {
+    if (!loadedRef.current) return;
+    const p = providerRef.current;
+    if (!providerConfigsRef.current[p]) {
+      const prov = getProvider(p);
+      providerConfigsRef.current[p] = {
+        apiKey: '', proxyUrl: '', baseUrl: prov.defaultBaseUrl || '',
+        model: '', customModel: '', maxTokens: '', contextWindow: '',
+      };
+    }
+    providerConfigsRef.current[p][field] = value;
+    storage.set('providerConfigs', providerConfigsRef.current);
+  }, []);
+
+  const applyProviderSettings = useCallback((s: ProviderSettings, p: ProviderType) => {
+    const prov = getProvider(p);
+    setApiKey(s.apiKey || '');
+    setProxyUrl(s.proxyUrl || import.meta.env.VITE_DEFAULT_PROXY_URL || '');
+    setBaseUrl(s.baseUrl || prov.defaultBaseUrl || '');
+    setModel(s.model || '');
+    setCustomModel(s.customModel || '');
+    setMaxTokens(s.maxTokens || '');
+    setContextWindow(s.contextWindow || '');
+  }, []);
 
   // Load config on mount
   useEffect(() => {
-    storage.get<string>('provider').then((val) => val && setProvider(val as ProviderType));
-    storage.get<string>('apiKey').then((val) => val && setApiKey(val));
-    storage.get<string>('proxyUrl').then((val) => val && setProxyUrl(val));
-    storage.get<string>('baseUrl').then((val) => val && setBaseUrl(val));
-    storage.get<string>('model').then((val) => val && setModel(val));
-    storage.get<string>('customModel').then((val) => val && setCustomModel(val));
-    storage.get<string>('sessionUserId').then((val) => val && setSessionUserId(val));
-    storage.get<string>('sessionPassword').then((val) => val && setSessionPassword(val));
-    storage.get<string>('sessionLoginType').then((val) => val && setSessionLoginType(val));
-    storage.get<string>('sessionLoginEndpoint').then((val) => val && setSessionLoginEndpoint(val));
-    storage.get<string>('soapEndpoint').then((val) => val && setSoapEndpoint(val));
-    storage.get<string>('sessionHeaderNs').then((val) => val && setSessionHeaderNs(val));
-    storage.get<Record<string, any>>('schemaOverrides').then((val) => val && setSchemaOverrides(val));
-    storage.get<Record<string, string>>('nsOverrides').then((val) => val && setNsOverrides(val));
+    (async () => {
+      const savedProvider = await storage.get<string>('provider');
+      const savedConfigs = await storage.get<Record<string, ProviderSettings>>('providerConfigs');
+      if (savedConfigs) providerConfigsRef.current = savedConfigs;
+
+      // Load non-provider-specific settings
+      const savedSessionUserId = await storage.get<string>('sessionUserId');
+      if (savedSessionUserId) setSessionUserId(savedSessionUserId);
+      const savedSessionPassword = await storage.get<string>('sessionPassword');
+      if (savedSessionPassword) setSessionPassword(savedSessionPassword);
+      const savedSessionLoginType = await storage.get<string>('sessionLoginType');
+      if (savedSessionLoginType) setSessionLoginType(savedSessionLoginType);
+      const savedSessionLoginEndpoint = await storage.get<string>('sessionLoginEndpoint');
+      if (savedSessionLoginEndpoint) setSessionLoginEndpoint(savedSessionLoginEndpoint);
+      const savedSoapEndpoint = await storage.get<string>('soapEndpoint');
+      if (savedSoapEndpoint) setSoapEndpoint(savedSoapEndpoint);
+      const savedSessionHeaderNs = await storage.get<string>('sessionHeaderNs');
+      if (savedSessionHeaderNs) setSessionHeaderNs(savedSessionHeaderNs);
+      const savedSchemaOverrides = await storage.get<Record<string, any>>('schemaOverrides');
+      if (savedSchemaOverrides) setSchemaOverrides(savedSchemaOverrides);
+      const savedNsOverrides = await storage.get<Record<string, string>>('nsOverrides');
+      if (savedNsOverrides) setNsOverrides(savedNsOverrides);
+      const savedToolNsConfig = await storage.get<Record<string, ToolNamespaceConfig>>('toolNsConfig');
+      if (savedToolNsConfig) setToolNsConfig(savedToolNsConfig);
+
+      // Restore the last-used provider and its settings
+      const pType = (savedProvider as ProviderType) || 'ollama';
+      const saved = savedConfigs?.[pType];
+      if (saved) {
+        applyProviderSettings(saved, pType);
+      }
+      setProvider(pType);
+      loadedRef.current = true;
+    })();
   }, []);
 
-  // Save config on change
-  useEffect(() => { storage.set('provider', provider); }, [provider]);
-  useEffect(() => { if (apiKey) storage.set('apiKey', apiKey); }, [apiKey]);
-  useEffect(() => { if (proxyUrl) storage.set('proxyUrl', proxyUrl); }, [proxyUrl]);
-  useEffect(() => { if (baseUrl) storage.set('baseUrl', baseUrl); }, [baseUrl]);
-  useEffect(() => { if (model) storage.set('model', model); }, [model]);
-  useEffect(() => { if (customModel) storage.set('customModel', customModel); }, [customModel]);
-  useEffect(() => { if (sessionUserId) storage.set('sessionUserId', sessionUserId); }, [sessionUserId]);
-  useEffect(() => { if (sessionPassword) storage.set('sessionPassword', sessionPassword); }, [sessionPassword]);
-  useEffect(() => { storage.set('sessionLoginType', sessionLoginType); }, [sessionLoginType]);
-  useEffect(() => { storage.set('sessionLoginEndpoint', sessionLoginEndpoint); }, [sessionLoginEndpoint]);
-  useEffect(() => { storage.set('soapEndpoint', soapEndpoint); }, [soapEndpoint]);
-  useEffect(() => { storage.set('sessionHeaderNs', sessionHeaderNs); }, [sessionHeaderNs]);
-  useEffect(() => { storage.set('schemaOverrides', schemaOverrides); }, [schemaOverrides]);
-  useEffect(() => { storage.set('nsOverrides', nsOverrides); }, [nsOverrides]);
+  // Save non-provider-specific settings on change (skip until initial load is done)
+  useEffect(() => { if (loadedRef.current && sessionUserId) storage.set('sessionUserId', sessionUserId); }, [sessionUserId]);
+  useEffect(() => { if (loadedRef.current && sessionPassword) storage.set('sessionPassword', sessionPassword); }, [sessionPassword]);
+  useEffect(() => { if (loadedRef.current) storage.set('sessionLoginType', sessionLoginType); }, [sessionLoginType]);
+  useEffect(() => { if (loadedRef.current) storage.set('sessionLoginEndpoint', sessionLoginEndpoint); }, [sessionLoginEndpoint]);
+  useEffect(() => { if (loadedRef.current) storage.set('soapEndpoint', soapEndpoint); }, [soapEndpoint]);
+  useEffect(() => { if (loadedRef.current) storage.set('sessionHeaderNs', sessionHeaderNs); }, [sessionHeaderNs]);
+  useEffect(() => { if (loadedRef.current) storage.set('schemaOverrides', schemaOverrides); }, [schemaOverrides]);
+  useEffect(() => { if (loadedRef.current) storage.set('nsOverrides', nsOverrides); }, [nsOverrides]);
+  useEffect(() => { if (loadedRef.current) storage.set('toolNsConfig', toolNsConfig); }, [toolNsConfig]);
+
+  // Save which provider is selected
+  useEffect(() => { if (loadedRef.current) storage.set('provider', provider); }, [provider]);
 
   // Init server
   useEffect(() => {
     if (wsdlDefinitions.length > 0) {
       console.log(`[TryItOutStep] Initializing BrowserMcpServer with ${wsdlDefinitions.length} WSDL definitions, ${xsdSchemas.length} XSD schemas`);
-      const s = new BrowserMcpServer(wsdlDefinitions, xsdSchemas);
+      const s = new BrowserMcpServer(wsdlDefinitions, xsdSchemas, enhancedDescriptions);
       s.onSessionChange = () => setSessionStatus(s.getSessionStatus());
       setServer(s);
       setSessionStatus('disconnected');
@@ -84,7 +158,7 @@ export function TryItOutStep() {
       setServer(null);
       setSessionStatus('disconnected');
     }
-  }, [wsdlDefinitions, xsdSchemas]);
+  }, [wsdlDefinitions, xsdSchemas, enhancedDescriptions]);
 
   // Apply endpoint override — saved soapEndpoint takes priority over config.baseUrl
   useEffect(() => {
@@ -103,6 +177,33 @@ export function TryItOutStep() {
     if (!server) return;
     server.setNamespaceOverrides(nsOverrides);
   }, [server, nsOverrides]);
+
+  // Apply per-tool namespace config
+  useEffect(() => {
+    if (!server) return;
+    server.setToolNamespaceConfig(toolNsConfig);
+  }, [server, toolNsConfig]);
+
+  // Register SOAP tools with WebMCP so any in-browser AI agent can discover and call them
+  useEffect(() => {
+    if (!server || !isWebMCPAvailable()) {
+      setWebMCPRegistered(false);
+      return;
+    }
+
+    const tools = server.getTools().tools;
+    registerSOAPToolsWithWebMCP(
+      tools,
+      (name, args) => server.callTool(name, args, proxyUrlRef.current),
+      () => proxyUrlRef.current,
+    );
+    setWebMCPRegistered(true);
+
+    return () => {
+      clearWebMCPContext();
+      setWebMCPRegistered(false);
+    };
+  }, [server]);
 
   // Wire session config into server whenever server or credentials change
   useEffect(() => {
@@ -166,6 +267,67 @@ export function TryItOutStep() {
     }
   }, [editingSchema, editBuffer]);
 
+  const updateToolNs = useCallback((toolName: string, field: 'namespace', value: string) => {
+    setToolNsConfig(prev => {
+      const existing = prev[toolName] || {};
+      const updated = { ...existing, [field]: value || undefined };
+      // Clean up empty configs
+      if (!updated.namespace && (!updated.additionalNamespaces || Object.keys(updated.additionalNamespaces).length === 0)) {
+        const next = { ...prev };
+        delete next[toolName];
+        return next;
+      }
+      return { ...prev, [toolName]: updated };
+    });
+  }, []);
+
+  const addToolExtraNs = useCallback((toolName: string) => {
+    setToolNsConfig(prev => {
+      const existing = prev[toolName] || {};
+      const addNs = { ...(existing.additionalNamespaces || {}), ['ns' + (Object.keys(existing.additionalNamespaces || {}).length + 1)]: '' };
+      return { ...prev, [toolName]: { ...existing, additionalNamespaces: addNs } };
+    });
+  }, []);
+
+  const updateToolExtraNs = useCallback((toolName: string, oldPrefix: string, newPrefix: string, uri: string) => {
+    setToolNsConfig(prev => {
+      const existing = prev[toolName] || {};
+      const addNs = { ...(existing.additionalNamespaces || {}) };
+      if (oldPrefix !== newPrefix) {
+        delete addNs[oldPrefix];
+      }
+      if (newPrefix) {
+        addNs[newPrefix] = uri;
+      }
+      // Remove empty entries
+      for (const k of Object.keys(addNs)) {
+        if (!k && !addNs[k]) delete addNs[k];
+      }
+      const updated = { ...existing, additionalNamespaces: Object.keys(addNs).length > 0 ? addNs : undefined };
+      if (!updated.namespace && !updated.additionalNamespaces) {
+        const next = { ...prev };
+        delete next[toolName];
+        return next;
+      }
+      return { ...prev, [toolName]: updated };
+    });
+  }, []);
+
+  const removeToolExtraNs = useCallback((toolName: string, prefix: string) => {
+    setToolNsConfig(prev => {
+      const existing = prev[toolName] || {};
+      const addNs = { ...(existing.additionalNamespaces || {}) };
+      delete addNs[prefix];
+      const updated = { ...existing, additionalNamespaces: Object.keys(addNs).length > 0 ? addNs : undefined };
+      if (!updated.namespace && !updated.additionalNamespaces) {
+        const next = { ...prev };
+        delete next[toolName];
+        return next;
+      }
+      return { ...prev, [toolName]: updated };
+    });
+  }, []);
+
   const resetSchema = useCallback((toolName: string) => {
     setSchemaOverrides(prev => {
       const next = { ...prev };
@@ -182,14 +344,22 @@ export function TryItOutStep() {
     return server.getToolNamesForOperations(ops);
   }, [server, config]);
 
-  // Reset models and base URL when provider changes
+  // Restore saved settings when provider changes
   useEffect(() => {
     setModels([]);
-    setModel('');
     setModelsError(null);
-    const p = getProvider(provider);
-    if (p.requiresBaseUrl) {
-      setBaseUrl(p.defaultBaseUrl);
+    const saved = providerConfigsRef.current[provider];
+    if (saved) {
+      applyProviderSettings(saved, provider);
+    } else {
+      // No saved config for this provider — use defaults
+      const p = getProvider(provider);
+      setApiKey('');
+      setBaseUrl(p.defaultBaseUrl || '');
+      setModel('');
+      setCustomModel('');
+      setMaxTokens('');
+      setContextWindow('');
     }
   }, [provider]);
 
@@ -210,6 +380,7 @@ export function TryItOutStep() {
 
       if (fetched.length > 0 && !fetched.some((m: ModelOption) => m.id === model)) {
         setModel(fetched[0].id);
+        saveProviderField('model', fetched[0].id);
       }
     } catch (err: any) {
       setModelsError(err.message);
@@ -250,7 +421,37 @@ export function TryItOutStep() {
                 {Object.keys(schemaOverrides).length} overridden
               </span>
             )}
+            {webMCPRegistered && (
+              <span className="webmcp-badge" title="Tools registered with navigator.modelContext — discoverable by any WebMCP-compatible in-browser agent">
+                WebMCP
+              </span>
+            )}
           </summary>
+
+          {webMCPRegistered && (
+            <p className={`webmcp-info${!proxyUrl ? ' webmcp-info--warn' : ''}`}>
+              {proxyUrl ? (
+                <>
+                  {effectiveTools.length} tool{effectiveTools.length !== 1 ? 's' : ''} registered with{' '}
+                  <code>navigator.modelContext</code>. Install the{' '}
+                  <a
+                    href="https://googlechromelabs.github.io/webmcp-tools/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Model Context Tool Inspector
+                  </a>{' '}
+                  extension to discover and invoke them, or use any WebMCP-compatible agent.
+                </>
+              ) : (
+                <>
+                  ⚠ {effectiveTools.length} tool{effectiveTools.length !== 1 ? 's' : ''} registered with{' '}
+                  <code>navigator.modelContext</code>, but no CORS proxy is configured — tool calls will fail.
+                  Set a proxy URL in Connection Settings.
+                </>
+              )}
+            </p>
+          )}
 
           {effectiveTools.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -336,6 +537,82 @@ export function TryItOutStep() {
                           </div>
                         </details>
                       )}
+                      {/* Per-tool namespace overrides */}
+                      <details
+                        className="tool-ns-details"
+                        open={editingToolNs === tool.name}
+                        onToggle={e => {
+                          const open = (e.target as HTMLDetailsElement).open;
+                          setEditingToolNs(open ? tool.name : null);
+                        }}
+                      >
+                        <summary>
+                          Namespace
+                          {tool.resolvedNamespace && (
+                            <span className="tool-ns-current" title={tool.resolvedNamespace}>
+                              {tool.resolvedNamespace.length > 40
+                                ? '...' + tool.resolvedNamespace.slice(-37)
+                                : tool.resolvedNamespace}
+                            </span>
+                          )}
+                          {(toolNsConfig[tool.name]?.namespace || toolNsConfig[tool.name]?.additionalNamespaces) && (
+                            <span className="tool-ns-modified-badge">modified</span>
+                          )}
+                        </summary>
+                        <div className="tool-ns-editor">
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                              Body namespace override:
+                            </label>
+                            <input
+                              type="text"
+                              className="ns-override-input"
+                              value={toolNsConfig[tool.name]?.namespace || ''}
+                              onChange={e => updateToolNs(tool.name, 'namespace', e.target.value)}
+                              placeholder={tool.resolvedNamespace || 'http://...'}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                              Additional xmlns declarations:
+                            </label>
+                            {Object.entries(toolNsConfig[tool.name]?.additionalNamespaces || {}).map(([prefix, uri]) => (
+                              <div key={prefix} className="tool-extra-ns-row">
+                                <input
+                                  type="text"
+                                  className="tool-extra-ns-prefix"
+                                  value={prefix}
+                                  onChange={e => updateToolExtraNs(tool.name, prefix, e.target.value, uri as string)}
+                                  placeholder="prefix"
+                                />
+                                <span style={{ color: 'var(--text-muted)' }}>=</span>
+                                <input
+                                  type="text"
+                                  className="tool-extra-ns-uri"
+                                  value={uri as string}
+                                  onChange={e => updateToolExtraNs(tool.name, prefix, prefix, e.target.value)}
+                                  placeholder="http://namespace-uri..."
+                                />
+                                <button
+                                  className="schema-action-btn schema-action-btn--reset"
+                                  onClick={() => removeToolExtraNs(tool.name, prefix)}
+                                  title="Remove this namespace"
+                                  style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                                >
+                                  x
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              className="schema-action-btn"
+                              onClick={() => addToolExtraNs(tool.name)}
+                              style={{ marginTop: '4px', fontSize: '0.75rem' }}
+                            >
+                              + Add xmlns
+                            </button>
+                          </div>
+                        </div>
+                      </details>
                     </>
                   )}
                 </div>
@@ -506,9 +783,29 @@ export function TryItOutStep() {
                   placeholder="e.g. CreateSession, STANDARD"
                 />
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
                 <button
-                  onClick={() => { server?.clearSession(); setSessionStatus('disconnected'); }}
+                  className="btn-primary"
+                  onClick={async () => {
+                    if (!server || !proxyUrl) return;
+                    setSessionStatus('connecting');
+                    setLoginError(null);
+                    try {
+                      await server.login(proxyUrl);
+                      setSessionStatus(server.getSessionStatus());
+                    } catch (err: any) {
+                      setSessionStatus('disconnected');
+                      setLoginError(err.message);
+                    }
+                  }}
+                  disabled={sessionStatus === 'connecting' || !sessionUserId || !sessionPassword || !proxyUrl}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}
+                  title="Test login with current credentials"
+                >
+                  {sessionStatus === 'connecting' ? 'Logging in...' : 'Login'}
+                </button>
+                <button
+                  onClick={() => { server?.clearSession(); setSessionStatus('disconnected'); setLoginError(null); }}
                   style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}
                   title="Force a fresh login on the next tool call"
                 >
@@ -516,8 +813,11 @@ export function TryItOutStep() {
                 </button>
               </div>
             </div>
+            {loginError && (
+              <p style={{ fontSize: '0.85rem', color: 'var(--error)', marginTop: '8px' }}>{loginError}</p>
+            )}
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-              Login happens automatically before the first tool call. Click "Reset Session" to force re-login.
+              Click "Login" to test, or login happens automatically before the first tool call.
             </p>
           </details>
         </div>
@@ -546,14 +846,14 @@ export function TryItOutStep() {
           {currentProvider.requiresApiKey && (
             <div style={{ marginBottom: '10px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>
-                {provider === 'gemini' ? 'Gemini API Key:' : 'Anthropic API Key:'}
+                {provider === 'gemini' ? 'Gemini API Key:' : provider === 'nvidia' ? 'NVIDIA API Key:' : 'Anthropic API Key:'}
               </label>
               <input
                 type="password"
                 value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
+                onChange={e => { setApiKey(e.target.value); saveProviderField('apiKey', e.target.value); }}
                 style={{ width: '100%', padding: '8px' }}
-                placeholder={provider === 'gemini' ? 'AIza...' : 'sk-...'}
+                placeholder={provider === 'gemini' ? 'AIza...' : provider === 'nvidia' ? 'nvapi-...' : 'sk-...'}
               />
             </div>
           )}
@@ -561,12 +861,12 @@ export function TryItOutStep() {
           {currentProvider.requiresBaseUrl && (
             <div style={{ marginBottom: '10px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>
-                {provider === 'llamacpp' ? 'llama.cpp Server URL:' : 'Ollama Base URL:'}
+                {provider === 'llamacpp' ? 'llama.cpp Server URL:' : provider === 'openai' ? 'OpenAI API URL:' : provider === 'nvidia' ? 'NVIDIA Build API URL:' : 'Ollama Base URL:'}
               </label>
               <input
                 type="text"
                 value={baseUrl}
-                onChange={e => setBaseUrl(e.target.value)}
+                onChange={e => { setBaseUrl(e.target.value); saveProviderField('baseUrl', e.target.value); }}
                 style={{ width: '100%', padding: '8px' }}
                 placeholder={currentProvider.defaultBaseUrl}
               />
@@ -585,6 +885,11 @@ export function TryItOutStep() {
                   llama.cpp server with OpenAI-compatible API endpoint.
                 </p>
               )}
+              {provider === 'nvidia' && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  NVIDIA Build (build.nvidia.com) — OpenAI-compatible endpoint.
+                </p>
+              )}
             </div>
           )}
 
@@ -594,7 +899,7 @@ export function TryItOutStep() {
             {modelsError && <p style={{ fontSize: '0.9rem', color: 'var(--error)' }}>Error: {modelsError}</p>}
             <select
               value={model}
-              onChange={e => setModel(e.target.value)}
+              onChange={e => { setModel(e.target.value); saveProviderField('model', e.target.value); }}
               style={{ width: '100%', padding: '8px' }}
               disabled={modelsLoading || models.length === 0}
             >
@@ -617,7 +922,7 @@ export function TryItOutStep() {
               <input
                 type="text"
                 value={customModel}
-                onChange={e => setCustomModel(e.target.value)}
+                onChange={e => { setCustomModel(e.target.value); saveProviderField('customModel', e.target.value); }}
                 style={{ width: '100%', padding: '8px' }}
                 placeholder="e.g., claude-4-20260219"
               />
@@ -630,7 +935,7 @@ export function TryItOutStep() {
               <input
                 type="text"
                 value={proxyUrl}
-                onChange={e => setProxyUrl(e.target.value)}
+                onChange={e => { setProxyUrl(e.target.value); saveProviderField('proxyUrl', e.target.value); }}
                 style={{ width: '100%', padding: '8px' }}
                 placeholder="https://your-cors-proxy.example.com"
               />
@@ -646,6 +951,37 @@ export function TryItOutStep() {
               </div>
             </details>
           )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Max Output Tokens:</label>
+              <input
+                type="number"
+                value={maxTokens}
+                onChange={e => { setMaxTokens(e.target.value); saveProviderField('maxTokens', e.target.value); }}
+                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                placeholder="default"
+                min="1"
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Maximum tokens per response
+              </span>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Context Window:</label>
+              <input
+                type="number"
+                value={contextWindow}
+                onChange={e => { setContextWindow(e.target.value); saveProviderField('contextWindow', e.target.value); }}
+                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                placeholder="default"
+                min="1"
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Max context size (for future use)
+              </span>
+            </div>
+          </div>
         </details>
       </div>
 
@@ -659,6 +995,8 @@ export function TryItOutStep() {
           server={server!}
           hiddenToolNames={hiddenToolNames}
           schemaOverrides={schemaOverrides}
+          maxTokens={maxTokens ? parseInt(maxTokens, 10) : undefined}
+          contextWindow={contextWindow ? parseInt(contextWindow, 10) : undefined}
         />
       ) : (
         <div className="placeholder-message">

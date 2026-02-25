@@ -38,13 +38,15 @@ export interface SendMessageResult {
   stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | string;
 }
 
-export type ProviderType = 'anthropic' | 'ollama' | 'gemini' | 'llamacpp' | 'openai';
+export type ProviderType = 'anthropic' | 'ollama' | 'gemini' | 'llamacpp' | 'openai' | 'nvidia';
 
 export interface ProviderConfig {
   apiKey: string;
   proxyUrl: string;
   baseUrl: string;
   model: string;
+  maxTokens?: number;
+  contextWindow?: number;
 }
 
 export interface LLMProvider {

@@ -93,6 +93,7 @@ export const ollamaProvider: LLMProvider = {
         messages: openaiMessages,
         tools: openaiTools.length > 0 ? openaiTools : undefined,
         stream: false,
+        ...(config.maxTokens ? { options: { num_predict: config.maxTokens } } : {}),
       }),
     });
 

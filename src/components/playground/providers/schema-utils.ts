@@ -13,6 +13,7 @@ const ALLOWED_KEYS = new Set([
   'required',
   'description',
   'enum',
+  'default',
 ]);
 
 export function sanitizeSchema(schema: any): any {
@@ -45,8 +46,8 @@ export function sanitizeSchema(schema: any): any {
   }
 
   // Ensure every schema object has a type — LLM APIs reject schemas without one
-  if (!out.type && !out.enum) {
-    out.type = out.properties ? 'object' : 'string';
+  if (!out.type) {
+    out.type = out.enum ? 'string' : (out.properties ? 'object' : 'string');
   }
 
   return out;

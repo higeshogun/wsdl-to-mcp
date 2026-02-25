@@ -13,6 +13,13 @@ export function generateConfigTs(config: ProjectConfig): string {
   }
 
   if (config.authType === 'session') {
+    if (!envVars.find(v => v.name === 'AUTH_URL')) {
+      envVars.push({
+        name: 'AUTH_URL',
+        description: 'Authentication service endpoint URL (may differ from BASE_URL)',
+        required: true,
+      });
+    }
     if (!envVars.find(v => v.name === 'LOGIN_TYPE')) {
       envVars.push({
         name: 'LOGIN_TYPE',

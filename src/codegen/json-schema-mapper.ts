@@ -16,6 +16,10 @@ export interface JsonSchema {
   maxLength?: number;
   pattern?: string;
   format?: string;
+  /** Marks this property as an XML attribute (not a child element) */
+  'x-xml-attribute'?: boolean;
+  /** Namespace URI for namespace-qualified XML attributes (e.g. ref="cq:dslRef") */
+  'x-xml-attribute-ns-uri'?: string;
 }
 
 const XSD_PRIMITIVE_MAP: Record<string, Partial<JsonSchema>> = {
@@ -42,6 +46,9 @@ const XSD_PRIMITIVE_MAP: Record<string, Partial<JsonSchema>> = {
   unsignedShort: { type: 'integer', minimum: 0 },
   base64Binary: { type: 'string', contentEncoding: 'base64' } as any,
   hexBinary: { type: 'string' },
+  // XSD wildcard types — accept any simple value including empty string
+  anySimpleType: { type: 'string', default: '' },
+  anyType: { type: 'string', default: '' },
 };
 
 export function elementToJsonSchema(element: XsdElement, registry: TypeRegistry): JsonSchema {
@@ -158,6 +165,17 @@ function attributeToJsonSchema(attr: XsdAttribute, registry: TypeRegistry): Json
       const st = registry.resolveSimpleType(localType);
       schema = st ? simpleTypeToJsonSchema(st) : { type: 'string' };
     }
+  } else if (attr.ref) {
+    // Resolve the type from the global attribute declaration
+    const globalAttr = registry.resolveGlobalAttribute(attr.ref);
+    if (globalAttr?.type) {
+      const localType = getLocalName(globalAttr.type);
+      schema = XSD_PRIMITIVE_MAP[localType]
+        ? { ...XSD_PRIMITIVE_MAP[localType] }
+        : { type: 'string' };
+    } else {
+      schema = { type: 'string' };
+    }
   } else {
     schema = { type: 'string' };
   }
@@ -167,6 +185,12 @@ function attributeToJsonSchema(attr: XsdAttribute, registry: TypeRegistry): Json
   }
 
   schema.description = formatFieldDescription(attr.name);
+  schema['x-xml-attribute'] = true;
+
+  // Propagate namespace URI for namespace-qualified attributes (e.g. ref="cq:dslRef")
+  if (attr.refNsUri) {
+    schema['x-xml-attribute-ns-uri'] = attr.refNsUri;
+  }
 
   return schema;
 }
@@ -177,7 +201,7 @@ export function simpleTypeToJsonSchema(st: XsdSimpleType): JsonSchema {
   const r = st.restriction;
 
   if (r.enumerations.length > 0) {
-    return { enum: r.enumerations };
+    return { type: 'string', enum: r.enumerations };
   }
 
   const baseLocalName = getLocalName(r.base);

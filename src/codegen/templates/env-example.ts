@@ -18,6 +18,9 @@ export function generateEnvExample(config: ProjectConfig): string {
   }
 
   if (config.authType === 'session') {
+    if (!config.envVars.find(v => v.name === 'AUTH_URL')) {
+      lines.push(`# Authentication service endpoint URL - may differ from BASE_URL (Required)\n${prefix}_AUTH_URL=`);
+    }
     if (!config.envVars.find(v => v.name === 'LOGIN_TYPE')) {
       lines.push(`# Session strategy: GetSession, CreateSession, or GetOrCreateSession (Optional)\n${prefix}_LOGIN_TYPE=GetOrCreateSession`);
     }

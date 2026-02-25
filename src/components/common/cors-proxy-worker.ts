@@ -7,7 +7,6 @@ export const WORKER_SCRIPT = `export default {
       return new Response("Missing url param", { status: 400 });
     }
 
-    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -18,19 +17,23 @@ export const WORKER_SCRIPT = `export default {
       });
     }
 
-    const modifiedRequest = new Request(targetUrl, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body
-    });
+    const fwdHeaders = new Headers();
+    const ct = request.headers.get("Content-Type");
+    if (ct) fwdHeaders.set("Content-Type", ct);
+    const auth = request.headers.get("Authorization");
+    if (auth) fwdHeaders.set("Authorization", auth);
+    const accept = request.headers.get("Accept");
+    if (accept) fwdHeaders.set("Accept", accept);
+    const soapAction = request.headers.get("SOAPAction");
+    if (soapAction) fwdHeaders.set("SOAPAction", soapAction);
 
-    // Remove host header
-    modifiedRequest.headers.delete("Host");
-    // Remove origin/referer to act as server-to-server
-    modifiedRequest.headers.delete("Origin");
-    modifiedRequest.headers.delete("Referer");
-
-    const response = await fetch(modifiedRequest);
+    const response = await fetch(
+      new Request(targetUrl, {
+        method: request.method,
+        headers: fwdHeaders,
+        body: request.body
+      })
+    );
 
     const newHeaders = new Headers(response.headers);
     newHeaders.set("Access-Control-Allow-Origin", "*");

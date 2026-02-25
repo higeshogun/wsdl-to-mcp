@@ -18,9 +18,10 @@ export function generateIndexTs(
     ? `import { SessionManager } from './session/session-manager.js';\n`
     : '';
 
-  const clientCreation = services.map(svc => {
+  const clientCreation = services.map((svc, index) => {
     const funcName = `create${toPascalCase(svc.clientKey)}Client`;
-    return `    ${funcName}(config.${prefix}_BASE_URL),`;
+    const urlVar = hasSession && index === 0 ? `${prefix}_AUTH_URL` : `${prefix}_BASE_URL`;
+    return `    ${funcName}(config.${urlVar}),`;
   }).join('\n');
 
   const clientDestructure = services.map(svc => svc.clientKey).join(', ');

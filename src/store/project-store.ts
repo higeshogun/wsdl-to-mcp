@@ -15,6 +15,8 @@ interface ProjectStore {
   config: ProjectConfig;
   generatedFiles: GeneratedFile[];
   currentStep: number;
+  /** AI-enhanced tool descriptions keyed by tool name */
+  enhancedDescriptions: Record<string, string>;
 
   addFiles: (fileEntries: { name: string; content: string }[]) => void;
   removeFile: (name: string) => void;
@@ -22,6 +24,8 @@ interface ProjectStore {
   updateConfig: (partial: Partial<ProjectConfig>) => void;
   generate: () => void;
   setStep: (step: number) => void;
+  setEnhancedDescription: (toolName: string, description: string) => void;
+  clearEnhancedDescriptions: () => void;
 
   totalOperations: () => number;
   totalServices: () => number;
@@ -35,6 +39,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   config: defaultConfig(),
   generatedFiles: [],
   currentStep: 0,
+  enhancedDescriptions: {},
 
   addFiles: (fileEntries) => {
     const newFiles = new Map(get().files);
@@ -54,6 +59,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       xsdSchemas: result.xsdSchemas,
       parseErrors: result.errors,
       config: { ...get().config, soapVersion: detectedVersion },
+      enhancedDescriptions: {},
     });
   },
 
@@ -78,6 +84,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       xsdSchemas: [],
       parseErrors: [],
       generatedFiles: [],
+      enhancedDescriptions: {},
     });
   },
 
@@ -86,9 +93,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   generate: () => {
-    const { wsdlDefinitions, xsdSchemas, config } = get();
+    const { wsdlDefinitions, xsdSchemas, config, enhancedDescriptions } = get();
     try {
-      const files = generateProject(wsdlDefinitions, xsdSchemas, config);
+      const files = generateProject(wsdlDefinitions, xsdSchemas, config, enhancedDescriptions);
       set({ generatedFiles: files });
     } catch (err) {
       console.error('Generation error:', err);
@@ -99,6 +106,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setStep: (step) => set({ currentStep: step }),
+
+  setEnhancedDescription: (toolName, description) =>
+    set(state => ({
+      enhancedDescriptions: { ...state.enhancedDescriptions, [toolName]: description },
+    })),
+
+  clearEnhancedDescriptions: () => set({ enhancedDescriptions: {} }),
 
   totalOperations: () => {
     return get().wsdlDefinitions.reduce(
