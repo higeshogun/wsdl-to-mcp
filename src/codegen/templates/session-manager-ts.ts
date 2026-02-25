@@ -12,6 +12,8 @@ interface SessionConfig {
   userID: string;
   password: string;
   loginType: string;
+  loginOperation: string;
+  logoutOperation: string;
   otp?: string;
 }
 
@@ -60,9 +62,14 @@ export class SessionManager {
       args.oneTimePassword = this.config.otp;
     }
 
-    const method = (this.authClient as Record<string, unknown>)['LoginAsync'] as (
+    const loginMethodName = this.config.loginOperation + 'Async';
+    const method = (this.authClient as Record<string, unknown>)[loginMethodName] as (
       args: Record<string, unknown>,
     ) => Promise<[Record<string, unknown>]>;
+
+    if (!method) {
+      throw new Error(\`Login operation '\${this.config.loginOperation}' not found on auth client\`);
+    }
 
     const [result] = await method.call(this.authClient, args);
 
@@ -136,7 +143,8 @@ export class SessionManager {
     if (!this.session) return;
     try {
       this.applySessionHeader(this.authClient, this.session);
-      const method = (this.authClient as Record<string, unknown>)['LogoutAsync'] as (
+      const logoutMethodName = this.config.logoutOperation + 'Async';
+      const method = (this.authClient as Record<string, unknown>)[logoutMethodName] as (
         args: Record<string, unknown>,
       ) => Promise<unknown>;
       if (method) {

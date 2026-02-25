@@ -34,11 +34,16 @@ export function generateIndexTs(
     `    ${svc.clientKey},`
   ).join('\n');
 
+  const loginOp = config.sessionConfig?.loginOperation || 'Login';
+  const logoutOp = config.sessionConfig?.logoutOperation || 'Logout';
+
   const sessionSetup = hasSession ? `
   const session = new SessionManager(${services[0]?.clientKey || 'client'}, {
     userID: config.${prefix}_USER_ID,
     password: config.${prefix}_PASSWORD,
     loginType: config.${prefix}_LOGIN_TYPE || 'GetOrCreateSession',
+    loginOperation: '${loginOp}',
+    logoutOperation: '${logoutOp}',
   });
 ` : '';
 
