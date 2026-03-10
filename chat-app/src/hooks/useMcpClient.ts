@@ -4,7 +4,7 @@ import { McpClient, McpClientError } from '../services/mcp-client'
 
 export function useMcpClient() {
   const mcpConfig = useConfigStore((s) => s.config.mcp)
-  const { connectionState, tools, error, setConnectionState, setTools, setError } = useMcpStore()
+  const { connectionState, tools, sessionTools, error, setConnectionState, setTools, setSessionTools, setError } = useMcpStore()
   const clientRef = useRef<McpClient | null>(null)
 
   const connect = useCallback(async () => {
@@ -23,7 +23,9 @@ export function useMcpClient() {
         setConnectionState('connected')
         try {
           const toolList = await client.listTools()
-          setTools(toolList)
+          const SESSION_TOOL_PATTERN = /^(login|logout|authenticate|sign.?in|sign.?out|get.?session|create.?session|end.?session)/i
+          setSessionTools(toolList.filter((t) => SESSION_TOOL_PATTERN.test(t.name)))
+          setTools(toolList.filter((t) => !SESSION_TOOL_PATTERN.test(t.name)))
         } catch (err) {
           setError(`Failed to list tools: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -67,11 +69,13 @@ export function useMcpClient() {
     if (!clientRef.current) return
     try {
       const toolList = await clientRef.current.listTools()
-      setTools(toolList)
+      const SESSION_TOOL_PATTERN = /^(login|logout|authenticate|sign.?in|sign.?out|get.?session|create.?session|end.?session)/i
+      setSessionTools(toolList.filter((t) => SESSION_TOOL_PATTERN.test(t.name)))
+      setTools(toolList.filter((t) => !SESSION_TOOL_PATTERN.test(t.name)))
     } catch (err) {
       setError(`Failed to refresh tools: ${err instanceof Error ? err.message : String(err)}`)
     }
-  }, [setTools, setError])
+  }, [setTools, setSessionTools, setError])
 
   // Auto-cleanup on unmount
   useEffect(() => {
@@ -83,6 +87,7 @@ export function useMcpClient() {
   return {
     connectionState,
     tools,
+    sessionTools,
     error,
     connect,
     disconnect,
