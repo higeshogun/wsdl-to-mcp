@@ -304,7 +304,7 @@ function OAuthTab() {
 function McpTab() {
   const { config, updateMcp } = useConfigStore()
   const mcp = config.mcp
-  const { connectionState, tools, error, connect, disconnect } = useMcpClient()
+  const { connectionState, tools, sessionTools, error, connect, disconnect } = useMcpClient()
   const isConnected = connectionState === 'connected'
   const isConnecting = connectionState === 'connecting'
 
@@ -320,7 +320,7 @@ function McpTab() {
         <ConnectionBadge
           label={
             connectionState === 'connected'
-              ? `Connected · ${tools.length} tool${tools.length !== 1 ? 's' : ''}`
+              ? `Connected · ${tools.length} tool${tools.length !== 1 ? 's' : ''}${sessionTools.length > 0 ? ` · ${sessionTools.length} session` : ''}`
               : connectionState === 'connecting'
               ? 'Connecting…'
               : connectionState === 'error'
@@ -390,7 +390,7 @@ function McpTab() {
 
       {tools.length > 0 && (
         <div className="tools-list">
-          <h4>Available Tools</h4>
+          <h4>Available Tools ({tools.length})</h4>
           {tools.map((tool) => (
             <div key={tool.name} className="tool-list-item">
               <span className="tool-list-name">{tool.name}</span>
@@ -401,6 +401,26 @@ function McpTab() {
           ))}
         </div>
       )}
+
+      {sessionTools.length > 0 && (
+        <details className="tools-list tools-list-session">
+          <summary>
+            <span>Session Tools — managed automatically ({sessionTools.length})</span>
+          </summary>
+          <p className="config-hint" style={{ marginTop: 6 }}>
+            These tools handle authentication server-side using credentials from the
+            server's <code>.env</code> file. They are hidden from the LLM.
+          </p>
+          {sessionTools.map((tool) => (
+            <div key={tool.name} className="tool-list-item tool-list-item-session">
+              <span className="tool-list-name">{tool.name}</span>
+              {tool.description && (
+                <span className="tool-list-desc">{tool.description}</span>
+              )}
+            </div>
+          ))}
+        </details>
+      )}
     </div>
   )
 }
@@ -410,6 +430,7 @@ function McpTab() {
 function PromptsTab() {
   const { config, updateLlm } = useConfigStore()
   const tools = useMcpStore((s) => s.tools)
+  const sessionTools = useMcpStore((s) => s.sessionTools)
   const { templates, addTemplate, updateTemplate, removeTemplate } = useTemplateStore()
   const { setPrefillText, setPendingSend, setSidebarOpen } = useUiStore()
 
@@ -423,12 +444,17 @@ function PromptsTab() {
     const toolLines = tools
       .map((t) => `- **${t.name}**: ${t.description ?? 'No description'}`)
       .join('\n')
-    const prompt =
+    let prompt =
       `You are a helpful assistant with access to the following SOAP web service tools:\n\n` +
       toolLines +
       `\n\nUse these tools to answer questions accurately. ` +
       `Always prefer calling a tool over guessing. ` +
       `When you receive tool results, summarise them clearly for the user.`
+    if (sessionTools.length > 0) {
+      prompt +=
+        `\n\nAuthentication is handled automatically by the server using credentials ` +
+        `from its configuration — you do not need to call login or logout tools.`
+    }
     updateLlm({ systemPrompt: prompt })
   }
 

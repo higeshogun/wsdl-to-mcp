@@ -96,18 +96,22 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 interface McpState {
   connectionState: McpConnectionState
   tools: McpTool[]
+  sessionTools: McpTool[]
   error: string | null
   setConnectionState: (state: McpConnectionState) => void
   setTools: (tools: McpTool[]) => void
+  setSessionTools: (tools: McpTool[]) => void
   setError: (error: string | null) => void
 }
 
 export const useMcpStore = create<McpState>()((set) => ({
   connectionState: 'disconnected',
   tools: [],
+  sessionTools: [],
   error: null,
   setConnectionState: (connectionState) => set({ connectionState }),
   setTools: (tools) => set({ tools }),
+  setSessionTools: (sessionTools) => set({ sessionTools }),
   setError: (error) => set({ error }),
 }))
 
