@@ -1,26 +1,51 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useChat } from '../hooks/useChat'
-import { useMcpStore } from '../store'
+import { useMcpStore, useUiStore, useTemplateStore } from '../store'
 import { MessageBubble } from './MessageBubble'
 
 export function ChatInterface() {
   const { messages, isStreaming, sendMessage, stopStreaming, clearMessages } = useChat()
   const tools = useMcpStore((s) => s.tools)
+  const templates = useTemplateStore((s) => s.templates)
+  const { prefillText, setPrefillText, pendingSend, setPendingSend, setActiveTab, setSidebarOpen } = useUiStore()
+
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Consume prefillText from templates "Fill input"
+  useEffect(() => {
+    if (prefillText !== null) {
+      setInput(prefillText)
+      setPrefillText(null)
+      textareaRef.current?.focus()
+      // Resize textarea
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current
+        if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 200) + 'px' }
+      })
+    }
+  }, [prefillText, setPrefillText])
+
+  // Consume pendingSend from templates "Send"
+  useEffect(() => {
+    if (pendingSend !== null && !isStreaming) {
+      const text = pendingSend
+      setPendingSend(null)
+      sendMessage(text)
+    }
+  }, [pendingSend, isStreaming, setPendingSend, sendMessage])
 
   const handleSend = () => {
     const text = input.trim()
     if (!text || isStreaming) return
     setInput('')
     sendMessage(text)
-    // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }
 
@@ -38,7 +63,11 @@ export function ChatInterface() {
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'
   }
 
-  // Filter out tool-result messages for display (they're shown inline)
+  const openTemplates = () => {
+    setSidebarOpen(true)
+    setActiveTab('prompts')
+  }
+
   const displayMessages = messages.filter((m) => m.role !== 'tool')
 
   return (
@@ -49,6 +78,11 @@ export function ChatInterface() {
         <div className="chat-header-actions">
           {tools.length > 0 && (
             <span className="tool-count-badge">{tools.length} tool{tools.length !== 1 ? 's' : ''}</span>
+          )}
+          {templates.length > 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={openTemplates} title="Browse prompt templates">
+              Templates ({templates.length})
+            </button>
           )}
           <button
             className="btn btn-ghost btn-sm"
@@ -75,12 +109,32 @@ export function ChatInterface() {
             {tools.length > 0 && (
               <p className="empty-hint">
                 {tools.length} tool{tools.length !== 1 ? 's' : ''} available:{' '}
-                {tools
-                  .slice(0, 3)
-                  .map((t) => t.name)
-                  .join(', ')}
+                {tools.slice(0, 3).map((t) => t.name).join(', ')}
                 {tools.length > 3 ? ` +${tools.length - 3} more` : ''}
               </p>
+            )}
+
+            {/* Quick-launch template chips in empty state */}
+            {templates.length > 0 && (
+              <div className="empty-templates">
+                <p className="empty-hint" style={{ marginBottom: 6 }}>Quick start:</p>
+                {templates.slice(0, 4).map((t) => (
+                  <button
+                    key={t.id}
+                    className="empty-template-chip"
+                    onClick={() => {
+                      if (t.sendImmediately) {
+                        sendMessage(t.body)
+                      } else {
+                        setInput(t.body)
+                        textareaRef.current?.focus()
+                      }
+                    }}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}

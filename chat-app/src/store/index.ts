@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   McpTool,
   McpConnectionState,
+  PromptTemplate,
 } from '../types'
 import { DEFAULT_CONFIG } from '../types'
 
@@ -19,7 +20,6 @@ interface ConfigState {
   updateMcp: (partial: Partial<AppConfig['mcp']>) => void
 }
 
-// Sensitive fields that must never be written to localStorage
 const REDACT_OAUTH = ['clientSecret', 'password'] as const
 const REDACT_LLM = ['apiKey'] as const
 
@@ -43,7 +43,6 @@ export const useConfigStore = create<ConfigState>()(
     }),
     {
       name: 'mcp-chat-config',
-      // Strip secrets before persisting
       partialize: (state) => ({
         config: {
           ...state.config,
@@ -88,7 +87,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     const { token } = get()
     if (!token) return false
     if (token.expiresAt === null) return true
-    return Date.now() < token.expiresAt - 30_000 // 30s buffer
+    return Date.now() < token.expiresAt - 30_000
   },
 }))
 
@@ -136,18 +135,70 @@ export const useChatStore = create<ChatState>()((set) => ({
   setStreaming: (isStreaming) => set({ isStreaming }),
 }))
 
+// ─── Template store (persisted) ───────────────────────────────────────────
+
+function tid(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+interface TemplateState {
+  templates: PromptTemplate[]
+  addTemplate: (t: Omit<PromptTemplate, 'id'>) => string
+  updateTemplate: (id: string, partial: Partial<Omit<PromptTemplate, 'id'>>) => void
+  removeTemplate: (id: string) => void
+  reorderTemplates: (ids: string[]) => void
+}
+
+export const useTemplateStore = create<TemplateState>()(
+  persist(
+    (set) => ({
+      templates: [],
+      addTemplate: (t) => {
+        const id = tid()
+        set((s) => ({ templates: [...s.templates, { ...t, id }] }))
+        return id
+      },
+      updateTemplate: (id, partial) =>
+        set((s) => ({
+          templates: s.templates.map((t) => (t.id === id ? { ...t, ...partial } : t)),
+        })),
+      removeTemplate: (id) =>
+        set((s) => ({ templates: s.templates.filter((t) => t.id !== id) })),
+      reorderTemplates: (ids) =>
+        set((s) => ({
+          templates: ids
+            .map((id) => s.templates.find((t) => t.id === id))
+            .filter((t): t is PromptTemplate => !!t),
+        })),
+    }),
+    { name: 'mcp-chat-templates' }
+  )
+)
+
 // ─── UI store ─────────────────────────────────────────────────────────────
+
+export type SidebarTab = 'llm' | 'oauth' | 'mcp' | 'prompts'
 
 interface UiState {
   sidebarOpen: boolean
-  activeTab: 'llm' | 'oauth' | 'mcp'
+  activeTab: SidebarTab
+  /** Pre-fill the chat textarea (consumed once by ChatInterface) */
+  prefillText: string | null
+  /** Trigger an immediate send from outside ChatInterface (consumed once) */
+  pendingSend: string | null
   setSidebarOpen: (open: boolean) => void
-  setActiveTab: (tab: 'llm' | 'oauth' | 'mcp') => void
+  setActiveTab: (tab: SidebarTab) => void
+  setPrefillText: (text: string | null) => void
+  setPendingSend: (text: string | null) => void
 }
 
 export const useUiStore = create<UiState>()((set) => ({
   sidebarOpen: true,
   activeTab: 'llm',
+  prefillText: null,
+  pendingSend: null,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setActiveTab: (activeTab) => set({ activeTab }),
+  setPrefillText: (prefillText) => set({ prefillText }),
+  setPendingSend: (pendingSend) => set({ pendingSend }),
 }))
