@@ -173,6 +173,19 @@ export interface OpenAIStreamChunk {
   }>
 }
 
+// ─── Prompt templates ────────────────────────────────────────────────────
+
+export interface PromptTemplate {
+  id: string
+  name: string
+  /** The prompt body — may contain {{tool_name}} hints */
+  body: string
+  /** Optional description shown in the template list */
+  description?: string
+  /** When true, clicking "Send" immediately sends this as a user message */
+  sendImmediately: boolean
+}
+
 // ─── App config (persisted) ──────────────────────────────────────────────
 
 export interface AppConfig {
